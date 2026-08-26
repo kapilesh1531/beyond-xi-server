@@ -1,0 +1,1011 @@
+const express = require("express");
+const mongoose = require("mongoose");
+
+const Team = require("../models/Team");
+const Auction = require("../models/Auction");
+
+const router = express.Router();
+
+const Player = mongoose.model("Player");
+
+const MIN_BID_INCREMENT = 1000000;
+
+/* =========================================================
+   BROADCAST COMPLETE STATE
+========================================================= */
+
+async function broadcastAuctionState(req) {
+  try {
+    const io = req.app.get("io");
+
+    if (!io) {
+      return;
+    }
+
+    const auction =
+      await Auction.findOne()
+        .sort({
+          createdAt: -1
+        })
+        .populate("currentPlayer")
+        .populate({
+          path: "highestBidder",
+          populate: {
+            path: "club",
+            select: "name country logo"
+          },
+          select:
+            "username purse isActive club"
+        })
+        .populate({
+          path: "results.player",
+          select:
+            "name age nationality position category rating basePrice image status soldPrice"
+        })
+        .populate({
+          path: "results.team",
+          select:
+            "username purse club",
+          populate: {
+            path: "club",
+            select:
+              "name country logo"
+          }
+        });
+
+    const allPlayers =
+      await Player.find({})
+        .sort({
+          createdAt: -1
+        })
+        .select(
+          "name age nationality position category rating basePrice image status activeForAuction auctionOrder soldTo soldPrice"
+        );
+
+    const teams =
+      await Team.find({
+        isActive: true
+      })
+        .select(
+          "username purse club players isActive"
+        )
+        .populate({
+          path: "club",
+          select:
+            "name country logo"
+        })
+        .populate({
+          path: "players",
+          select:
+            "name age nationality position category rating basePrice image status soldPrice"
+        });
+
+    io.to("auction-room").emit(
+      "auction:update",
+      auction
+    );
+
+    io.to("auction-room").emit(
+      "players:update",
+      allPlayers
+    );
+
+    io.to("auction-room").emit(
+      "teams:update",
+      teams
+    );
+  } catch (error) {
+    console.error(
+      "Broadcast auction state error:",
+      error
+    );
+  }
+}
+
+/* =========================================================
+   GET CURRENT AUCTION
+========================================================= */
+
+router.get("/", async (req, res) => {
+  try {
+    const auction =
+      await Auction.findOne()
+        .sort({
+          createdAt: -1
+        })
+        .populate("currentPlayer")
+        .populate({
+          path: "highestBidder",
+          populate: {
+            path: "club",
+            select:
+              "name country logo"
+          },
+          select:
+            "username purse isActive club"
+        })
+        .populate({
+          path: "results.player",
+          select:
+            "name age nationality position category rating basePrice image status soldPrice"
+        })
+        .populate({
+          path: "results.team",
+          select:
+            "username purse club",
+          populate: {
+            path: "club",
+            select:
+              "name country logo"
+          }
+        });
+
+    if (!auction) {
+      return res.json({
+        status: "Not Started",
+        currentPlayer: null,
+        currentBid: 0,
+        highestBidder: null,
+        results: []
+      });
+    }
+
+    res.json(auction);
+  } catch (error) {
+    console.error(
+      "Get auction error:",
+      error
+    );
+
+    res.status(500).json({
+      message:
+        "Failed to fetch auction."
+    });
+  }
+});
+
+/* =========================================================
+   AUCTION HISTORY
+========================================================= */
+
+router.get(
+  "/history",
+  async (req, res) => {
+    try {
+      const auction =
+        await Auction.findOne()
+          .sort({
+            createdAt: -1
+          })
+          .populate({
+            path: "results.player",
+            select:
+              "name age nationality position category rating basePrice image status soldPrice"
+          })
+          .populate({
+            path: "results.team",
+            select:
+              "username purse club",
+            populate: {
+              path: "club",
+              select:
+                "name country logo"
+            }
+          });
+
+      res.json({
+        results:
+          auction?.results || []
+      });
+    } catch (error) {
+      console.error(
+        "Get auction history error:",
+        error
+      );
+
+      res.status(500).json({
+        message:
+          "Failed to fetch auction history."
+      });
+    }
+  }
+);
+
+/* =========================================================
+   START AUCTION
+========================================================= */
+
+router.post(
+  "/start",
+  async (req, res) => {
+    try {
+      const activePlayers =
+        await Player.find({
+          activeForAuction: true,
+          status: "Available"
+        });
+
+      if (
+        activePlayers.length === 0
+      ) {
+        return res.status(400).json({
+          message:
+            "No active players are available for the auction."
+        });
+      }
+
+      const runningAuction =
+        await Auction.findOne({
+          status: {
+            $in: [
+              "Live",
+              "Paused"
+            ]
+          }
+        });
+
+      if (runningAuction) {
+        return res.status(400).json({
+          message:
+            "An auction is already running."
+        });
+      }
+
+      const shuffledPlayers =
+        [...activePlayers].sort(
+          () =>
+            Math.random() - 0.5
+        );
+
+      const orderUpdates =
+        shuffledPlayers.map(
+          (
+            player,
+            index
+          ) => ({
+            updateOne: {
+              filter: {
+                _id: player._id
+              },
+              update: {
+                $set: {
+                  auctionOrder:
+                    index + 1
+                }
+              }
+            }
+          })
+        );
+
+      if (
+        orderUpdates.length > 0
+      ) {
+        await Player.bulkWrite(
+          orderUpdates
+        );
+      }
+
+      const firstPlayer =
+        shuffledPlayers[0];
+
+      const auction =
+        await Auction.create({
+          status: "Live",
+
+          playerPool:
+            shuffledPlayers.map(
+              (player) =>
+                player._id
+            ),
+
+          currentPlayer:
+            firstPlayer._id,
+
+          currentPlayerIndex: 0,
+
+          currentBid:
+            Number(
+              firstPlayer.basePrice
+            ),
+
+          highestBidder: null,
+
+          bids: [],
+
+          results: [],
+
+          startedAt: new Date()
+        });
+
+      const populatedAuction =
+        await Auction.findById(
+          auction._id
+        ).populate(
+          "currentPlayer"
+        );
+
+      res.status(201).json({
+        message:
+          "Auction started successfully.",
+        auction:
+          populatedAuction
+      });
+
+      await broadcastAuctionState(
+        req
+      );
+    } catch (error) {
+      console.error(
+        "Start auction error:",
+        error
+      );
+
+      res.status(500).json({
+        message:
+          "Failed to start auction."
+      });
+    }
+  }
+);
+
+/* =========================================================
+   MANUAL SELL
+========================================================= */
+
+router.post(
+  "/manual-sell",
+  async (req, res) => {
+    const session =
+      await mongoose.startSession();
+
+    try {
+      session.startTransaction();
+
+      const {
+        teamId,
+        finalPrice
+      } = req.body;
+
+      const salePrice =
+        Number(finalPrice);
+
+      if (!teamId) {
+        throw new Error(
+          "Winning team is required."
+        );
+      }
+
+      if (
+        !Number.isFinite(
+          salePrice
+        ) ||
+        salePrice <= 0
+      ) {
+        throw new Error(
+          "A valid final bid amount is required."
+        );
+      }
+
+      const auction =
+        await Auction.findOne({
+          status: "Live"
+        }).session(session);
+
+      if (!auction) {
+        throw new Error(
+          "No live auction found."
+        );
+      }
+
+      if (!auction.currentPlayer) {
+        throw new Error(
+          "No current player."
+        );
+      }
+
+      const team =
+        await Team.findById(
+          teamId
+        ).session(session);
+
+      const player =
+        await Player.findById(
+          auction.currentPlayer
+        ).session(session);
+
+      if (!team) {
+        throw new Error(
+          "Winning team not found."
+        );
+      }
+
+      if (!player) {
+        throw new Error(
+          "Current player not found."
+        );
+      }
+
+      if (!team.isActive) {
+        throw new Error(
+          "The selected team is inactive."
+        );
+      }
+
+      if (
+        Number(team.purse) <
+        salePrice
+      ) {
+        throw new Error(
+          "The selected team does not have enough purse."
+        );
+      }
+
+      if (
+        player.status === "Sold"
+      ) {
+        throw new Error(
+          "This player has already been sold."
+        );
+      }
+
+      if (
+        !Array.isArray(
+          team.players
+        )
+      ) {
+        team.players = [];
+      }
+
+      const alreadyOwned =
+        team.players.some(
+          (playerId) =>
+            String(playerId) ===
+            String(player._id)
+        );
+
+      if (!alreadyOwned) {
+        team.players.push(
+          player._id
+        );
+      }
+
+      team.purse =
+        Number(team.purse) -
+        salePrice;
+
+      player.status = "Sold";
+      player.activeForAuction =
+        false;
+      player.auctionOrder = null;
+      player.soldTo = team._id;
+      player.soldPrice =
+        salePrice;
+
+      auction.highestBidder =
+        team._id;
+
+      auction.currentBid =
+        salePrice;
+
+      const alreadyRecorded =
+        auction.results.some(
+          (result) =>
+            result.player &&
+            String(result.player) ===
+            String(player._id)
+        );
+
+      if (!alreadyRecorded) {
+        auction.results.push({
+          player: player._id,
+          result: "Sold",
+          team: team._id,
+          amount: salePrice,
+          completedAt:
+            new Date()
+        });
+      }
+
+      await team.save({
+        session
+      });
+
+      await player.save({
+        session
+      });
+
+      await auction.save({
+        session
+      });
+
+      await session.commitTransaction();
+
+      const updatedAuction =
+        await Auction.findById(
+          auction._id
+        )
+          .populate(
+            "currentPlayer"
+          )
+          .populate({
+            path: "highestBidder",
+            populate: {
+              path: "club",
+              select:
+                "name country logo"
+            },
+            select:
+              "username purse isActive club"
+          })
+          .populate({
+            path: "results.player",
+            select:
+              "name age nationality position category rating basePrice image status soldPrice"
+          })
+          .populate({
+            path: "results.team",
+            select:
+              "username purse club",
+            populate: {
+              path: "club",
+              select:
+                "name country logo"
+            }
+          });
+
+      const updatedTeam =
+        await Team.findById(
+          team._id
+        )
+          .select(
+            "username purse club players isActive"
+          )
+          .populate({
+            path: "club",
+            select:
+              "name country logo"
+          })
+          .populate({
+            path: "players",
+            select:
+              "name age nationality position category rating basePrice image status soldPrice"
+          });
+
+      res.json({
+        message:
+          "Player sold successfully.",
+        auction:
+          updatedAuction,
+        team:
+          updatedTeam,
+        player
+      });
+
+      await broadcastAuctionState(
+        req
+      );
+    } catch (error) {
+      try {
+        await session.abortTransaction();
+      } catch {}
+
+      console.error(
+        "Manual sell error:",
+        error
+      );
+
+      res.status(400).json({
+        message:
+          error.message ||
+          "Failed to sell player."
+      });
+    } finally {
+      session.endSession();
+    }
+  }
+);
+
+/* =========================================================
+   MARK UNSOLD
+========================================================= */
+
+router.post(
+  "/unsold",
+  async (req, res) => {
+    const session =
+      await mongoose.startSession();
+
+    try {
+      session.startTransaction();
+
+      const auction =
+        await Auction.findOne({
+          status: "Live"
+        }).session(session);
+
+      if (!auction) {
+        throw new Error(
+          "No live auction found."
+        );
+      }
+
+      if (!auction.currentPlayer) {
+        throw new Error(
+          "No current player."
+        );
+      }
+
+      const player =
+        await Player.findById(
+          auction.currentPlayer
+        ).session(session);
+
+      if (!player) {
+        throw new Error(
+          "Player not found."
+        );
+      }
+
+      if (
+        player.status === "Sold"
+      ) {
+        throw new Error(
+          "This player has already been sold."
+        );
+      }
+
+      player.status = "Unsold";
+      player.activeForAuction =
+        false;
+      player.auctionOrder = null;
+      player.soldTo = null;
+      player.soldPrice = null;
+
+      const alreadyRecorded =
+        auction.results.some(
+          (result) =>
+            result.player &&
+            String(result.player) ===
+            String(player._id)
+        );
+
+      if (!alreadyRecorded) {
+        auction.results.push({
+          player: player._id,
+          result: "Unsold",
+          team: null,
+          amount: 0,
+          completedAt:
+            new Date()
+        });
+      }
+
+      await player.save({
+        session
+      });
+
+      await auction.save({
+        session
+      });
+
+      await session.commitTransaction();
+
+      const updatedAuction =
+        await Auction.findById(
+          auction._id
+        )
+          .populate(
+            "currentPlayer"
+          )
+          .populate({
+            path: "results.player",
+            select:
+              "name age nationality position category rating basePrice image status soldPrice"
+          })
+          .populate({
+            path: "results.team",
+            select:
+              "username purse club",
+            populate: {
+              path: "club",
+              select:
+                "name country logo"
+            }
+          });
+
+      res.json({
+        message:
+          "Player marked unsold.",
+        auction:
+          updatedAuction,
+        player
+      });
+
+      await broadcastAuctionState(
+        req
+      );
+    } catch (error) {
+      try {
+        await session.abortTransaction();
+      } catch {}
+
+      console.error(
+        "Unsold player error:",
+        error
+      );
+
+      res.status(400).json({
+        message:
+          error.message ||
+          "Failed to mark player unsold."
+      });
+    } finally {
+      session.endSession();
+    }
+  }
+);
+
+/* =========================================================
+   NEXT PLAYER
+========================================================= */
+
+router.post(
+  "/next",
+  async (req, res) => {
+    try {
+      const auction =
+        await Auction.findOne({
+          status: "Live"
+        });
+
+      if (!auction) {
+        return res.status(400).json({
+          message:
+            "No live auction found."
+        });
+      }
+
+      if (!auction.currentPlayer) {
+        return res.status(400).json({
+          message:
+            "There is no current player."
+        });
+      }
+
+      const currentPlayerId =
+        auction.currentPlayer;
+
+      const alreadyRecorded =
+        auction.results.some(
+          (result) =>
+            result.player &&
+            String(result.player) ===
+            String(
+              currentPlayerId
+            )
+        );
+
+      if (!alreadyRecorded) {
+        return res.status(400).json({
+          message:
+            "Complete the current player as SOLD or UNSOLD before moving to the next player."
+        });
+      }
+
+      const nextIndex =
+        auction.currentPlayerIndex +
+        1;
+
+      if (
+        nextIndex >=
+        auction.playerPool.length
+      ) {
+        auction.status =
+          "Completed";
+
+        auction.currentPlayer =
+          null;
+
+        auction.highestBidder =
+          null;
+
+        auction.currentBid = 0;
+
+        auction.currentPlayerIndex =
+          auction.playerPool.length;
+
+        auction.completedAt =
+          new Date();
+
+        auction.bids = [];
+
+        await auction.save();
+
+        res.json({
+          message:
+            "Auction completed.",
+          auction
+        });
+
+        await broadcastAuctionState(
+          req
+        );
+
+        return;
+      }
+
+      const nextPlayerId =
+        auction.playerPool[
+          nextIndex
+        ];
+
+      const nextPlayer =
+        await Player.findById(
+          nextPlayerId
+        );
+
+      if (!nextPlayer) {
+        return res.status(404).json({
+          message:
+            "Next player not found."
+        });
+      }
+
+      nextPlayer.status =
+        "Available";
+
+      nextPlayer.activeForAuction =
+        true;
+
+      nextPlayer.auctionOrder =
+        nextIndex + 1;
+
+      await nextPlayer.save();
+
+      auction.currentPlayer =
+        nextPlayer._id;
+
+      auction.currentPlayerIndex =
+        nextIndex;
+
+      auction.currentBid =
+        Number(
+          nextPlayer.basePrice
+        );
+
+      auction.highestBidder =
+        null;
+
+      auction.bids = [];
+
+      await auction.save();
+
+      const updatedAuction =
+        await Auction.findById(
+          auction._id
+        ).populate(
+          "currentPlayer"
+        );
+
+      res.json({
+        message:
+          "Next player loaded.",
+        auction:
+          updatedAuction
+      });
+
+      await broadcastAuctionState(
+        req
+      );
+    } catch (error) {
+      console.error(
+        "Next player error:",
+        error
+      );
+
+      res.status(400).json({
+        message:
+          error.message ||
+          "Failed to load next player."
+      });
+    }
+  }
+);
+
+/* =========================================================
+   PAUSE
+========================================================= */
+
+router.post(
+  "/pause",
+  async (req, res) => {
+    try {
+      const auction =
+        await Auction.findOne({
+          status: "Live"
+        });
+
+      if (!auction) {
+        return res.status(400).json({
+          message:
+            "No live auction found."
+        });
+      }
+
+      auction.status =
+        "Paused";
+
+      await auction.save();
+
+      res.json({
+        message:
+          "Auction paused.",
+        auction
+      });
+
+      await broadcastAuctionState(
+        req
+      );
+    } catch (error) {
+      console.error(
+        "Pause auction error:",
+        error
+      );
+
+      res.status(500).json({
+        message:
+          "Failed to pause auction."
+      });
+    }
+  }
+);
+
+/* =========================================================
+   RESUME
+========================================================= */
+
+router.post(
+  "/resume",
+  async (req, res) => {
+    try {
+      const auction =
+        await Auction.findOne({
+          status: "Paused"
+        });
+
+      if (!auction) {
+        return res.status(400).json({
+          message:
+            "No paused auction found."
+        });
+      }
+
+      auction.status =
+        "Live";
+
+      await auction.save();
+
+      res.json({
+        message:
+          "Auction resumed.",
+        auction
+      });
+
+      await broadcastAuctionState(
+        req
+      );
+    } catch (error) {
+      console.error(
+        "Resume auction error:",
+        error
+      );
+
+      res.status(500).json({
+        message:
+          "Failed to resume auction."
+      });
+    }
+  }
+);
+
+module.exports = router;
