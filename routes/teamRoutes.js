@@ -33,17 +33,13 @@ router.post(
 
       if (
         !clubId ||
-        !username ||
         !password
       ) {
         return res.status(400).json({
           message:
-            "Club, username and password are required."
+            "Club and password are required."
         });
       }
-
-      const cleanUsername =
-        username.trim();
 
       const cleanPassword =
         String(password);
@@ -61,6 +57,9 @@ router.post(
             "This club is already assigned or unavailable."
         });
       }
+
+      const cleanUsername =
+        String(username || club.name).trim();
 
       const existingUsername =
         await Team.findOne({
