@@ -1,79 +1,101 @@
-const express =
-  require("express");
-
-const mongoose =
-  require("mongoose");
-
-const cors =
-  require("cors");
-
-const path =
-  require("path");
-
-const http =
-  require("http");
-
-const {
-  Server
-} = require("socket.io");
-
 require("dotenv").config();
 
-const app =
-  express();
+const express = require("express");
+const http = require("http");
+const path = require("path");
+const fs = require("fs");
+const mongoose = require("mongoose");
+const { Server } = require("socket.io");
 
-const server =
-  http.createServer(
-    app
+const app = express();
+const server = http.createServer(app);
+
+const PORT =
+  Number(process.env.PORT) || 5000;
+
+const MONGO_URI =
+  process.env.MONGODB_URI ||
+  process.env.MONGO_URI ||
+  "mongodb://127.0.0.1:27017/beyond_xi";
+
+
+/* =========================================================
+   CORS
+========================================================= */
+
+app.use((req, res, next) => {
+
+  res.header(
+    "Access-Control-Allow-Origin",
+    "http://localhost:5173"
   );
 
-/* =========================================================
-   REGISTER MODELS ONLY ONCE
-========================================================= */
+  res.header(
+    "Access-Control-Allow-Methods",
+    "GET,POST,PUT,PATCH,DELETE,OPTIONS"
+  );
 
-require(
-  "./models/Player"
-);
+  res.header(
+    "Access-Control-Allow-Headers",
+    "Content-Type, Authorization"
+  );
 
-require(
-  "./models/Club"
-);
+  if (req.method === "OPTIONS") {
+    return res.sendStatus(204);
+  }
 
-require(
-  "./models/Team"
-);
+  next();
+});
 
-require(
-  "./models/Auction"
-);
 
 /* =========================================================
-   ROUTES
+   BODY PARSERS
 ========================================================= */
 
-const authRoutes =
-  require("./routes/authRoutes");
+app.use(
+  express.json({
+    limit: "10mb"
+  })
+);
 
-const teamRoutes =
-  require("./routes/teamRoutes");
+app.use(
+  express.urlencoded({
+    extended: true,
+    limit: "10mb"
+  })
+);
 
-const adminTeamRoutes =
-  require("./routes/adminTeamRoutes");
 
-const clubRoutes =
-  require("./routes/clubRoutes");
+/* =========================================================
+   UPLOADS
+========================================================= */
 
-const playerRoutes =
-  require("./routes/playerRoutes");
+const uploadsDir =
+  path.join(
+    __dirname,
+    "uploads"
+  );
 
-const poolRoutes =
-  require("./routes/poolRoutes");
+if (
+  !fs.existsSync(
+    uploadsDir
+  )
+) {
+  fs.mkdirSync(
+    uploadsDir,
+    {
+      recursive: true
+    }
+  );
+}
 
-const auctionRoutes =
-  require("./routes/auctionRoutes");
+app.use(
+  "/uploads",
+  express.static(
+    uploadsDir
+  )
+);
 
-const resetRoutes =
-  require("./routes/resetRoutes");
 
 /* =========================================================
    SOCKET.IO
@@ -89,13 +111,8 @@ const io =
 
         methods: [
           "GET",
-          "POST",
-          "PUT",
-          "DELETE"
-        ],
-
-        credentials:
-          true
+          "POST"
+        ]
       }
     }
   );
@@ -105,136 +122,12 @@ app.set(
   io
 );
 
-/* =========================================================
-   MIDDLEWARE
-========================================================= */
-
-app.use(
-  cors({
-    origin:
-      "http://localhost:5173",
-
-    methods: [
-      "GET",
-      "POST",
-      "PUT",
-      "DELETE"
-    ],
-
-    credentials:
-      true
-  })
-);
-
-app.use(
-  express.json({
-    limit:
-      "10mb"
-  })
-);
-
-app.use(
-  express.urlencoded({
-    extended:
-      true,
-
-    limit:
-      "10mb"
-  })
-);
-
-/* =========================================================
-   UPLOADS
-========================================================= */
-
-app.use(
-  "/uploads",
-  express.static(
-    path.join(
-      __dirname,
-      "uploads"
-    )
-  )
-);
-
-/* =========================================================
-   HEALTH
-========================================================= */
-
-app.get(
-  "/api/health",
-  (req, res) => {
-    res.json({
-      success:
-        true,
-
-      message:
-        "Beyond XI server is running",
-
-      mongodb:
-        mongoose.connection
-          .readyState ===
-        1
-          ? "connected"
-          : "disconnected"
-    });
-  }
-);
-
-/* =========================================================
-   ROUTES
-========================================================= */
-
-app.use(
-  "/api/auth",
-  authRoutes
-);
-
-app.use(
-  "/api/teams",
-  teamRoutes
-);
-
-app.use(
-  "/api/admin/teams",
-  adminTeamRoutes
-);
-
-app.use(
-  "/api/clubs",
-  clubRoutes
-);
-
-app.use(
-  "/api/players",
-  playerRoutes
-);
-
-app.use(
-  "/api/pool",
-  poolRoutes
-);
-
-app.use(
-  "/api/auction",
-  auctionRoutes
-);
-
-app.use(
-  "/api/reset",
-  resetRoutes
-);
-
-/* =========================================================
-   SOCKET EVENTS
-========================================================= */
-
 io.on(
   "connection",
   (socket) => {
+
     console.log(
-      "User connected:",
-      socket.id
+      `Socket connected: ${socket.id}`
     );
 
     socket.on(
@@ -247,43 +140,932 @@ io.on(
     );
 
     socket.on(
-      "leaveAuction",
+      "disconnect",
       () => {
-        socket.leave(
-          "auction-room"
+
+        console.log(
+          `Socket disconnected: ${socket.id}`
         );
+
       }
     );
 
-    socket.on(
-      "disconnect",
-      () => {
-        console.log(
-          "User disconnected:",
-          socket.id
-        );
-      }
-    );
   }
 );
+
+
+/* =========================================================
+   LOAD MODELS
+========================================================= */
+
+function loadModels() {
+
+  const modelsDir =
+    path.join(
+      __dirname,
+      "models"
+    );
+
+  if (
+    !fs.existsSync(
+      modelsDir
+    )
+  ) {
+
+    console.warn(
+      "Models directory not found."
+    );
+
+    return;
+  }
+
+
+  const preferredModels = [
+
+    "Player.js",
+    "Club.js",
+    "Team.js",
+    "Auction.js",
+    "TradeSettings.js",
+    "TradeRequest.js"
+
+  ];
+
+
+  const loaded =
+    new Set();
+
+
+  for (
+    const file of preferredModels
+  ) {
+
+    const fullPath =
+      path.join(
+        modelsDir,
+        file
+      );
+
+    if (
+      !fs.existsSync(
+        fullPath
+      )
+    ) {
+      continue;
+    }
+
+
+    require(
+      fullPath
+    );
+
+
+    loaded.add(
+      file.toLowerCase()
+    );
+
+
+    console.log(
+      `Model loaded: ${file}`
+    );
+
+  }
+
+
+  const remainingFiles =
+    fs
+      .readdirSync(
+        modelsDir
+      )
+      .filter(
+        (file) =>
+          file
+            .toLowerCase()
+            .endsWith(".js") &&
+          !loaded.has(
+            file.toLowerCase()
+          )
+      )
+      .sort();
+
+
+  for (
+    const file of remainingFiles
+  ) {
+
+    try {
+
+      require(
+        path.join(
+          modelsDir,
+          file
+        )
+      );
+
+
+      console.log(
+        `Model loaded: ${file}`
+      );
+
+    } catch (
+      error
+    ) {
+
+      console.warn(
+        `Could not load model ${file}: ${error.message}`
+      );
+
+    }
+
+  }
+
+}
+
+
+loadModels();
+
+
+/* =========================================================
+   MODELS USED BY COMPATIBILITY ENDPOINTS
+========================================================= */
+
+const Team =
+  mongoose.models.Team;
+
+const Player =
+  mongoose.models.Player;
+
+
+/* =========================================================
+   GET ALL TEAM ACCOUNTS
+   COMPATIBILITY ENDPOINT
+
+   GET /api/admin/teams
+========================================================= */
+
+app.get(
+  "/api/admin/teams",
+  async (
+    req,
+    res
+  ) => {
+
+    try {
+
+      if (!Team) {
+
+        return res
+          .status(500)
+          .json({
+            message:
+              "Team model is not registered."
+          });
+
+      }
+
+
+      const teams =
+        await Team.find({})
+          .select(
+            "username adminPassword purse club players isActive bestXI"
+          )
+          .populate({
+            path: "club",
+            select:
+              "name country logo"
+          })
+          .populate({
+            path: "players",
+            select:
+              "name age nationality position category rating basePrice image status soldPrice"
+          })
+          .populate({
+            path: "bestXI.players",
+            select:
+              "name age nationality position category rating image soldPrice"
+          })
+          .sort({
+            createdAt: 1
+          });
+
+
+      return res.json(
+        teams
+      );
+
+    } catch (error) {
+
+      console.error(
+        "GET /api/admin/teams error:",
+        error
+      );
+
+
+      return res
+        .status(500)
+        .json({
+          message:
+            error.message ||
+            "Failed to fetch teams."
+        });
+
+    }
+
+  }
+);
+
+
+/* =========================================================
+   GET ONE TEAM
+   COMPATIBILITY ENDPOINT
+
+   THIS FIXES:
+
+   GET /api/admin/teams/:teamId
+========================================================= */
+
+app.get(
+  "/api/admin/teams/:teamId",
+  async (
+    req,
+    res
+  ) => {
+
+    try {
+
+      if (!Team) {
+
+        return res
+          .status(500)
+          .json({
+            message:
+              "Team model is not registered."
+          });
+
+      }
+
+
+      const team =
+        await Team.findById(
+          req.params.teamId
+        )
+          .select(
+            "username adminPassword purse club players isActive bestXI"
+          )
+          .populate({
+            path: "club",
+            select:
+              "name country logo"
+          })
+          .populate({
+            path: "players",
+            select:
+              "name age nationality position category rating basePrice image status soldPrice"
+          })
+          .populate({
+            path: "bestXI.players",
+            select:
+              "name age nationality position category rating image soldPrice"
+          });
+
+
+      if (!team) {
+
+        return res
+          .status(404)
+          .json({
+            message:
+              "Team not found."
+          });
+
+      }
+
+
+      return res.json(
+        team
+      );
+
+    } catch (error) {
+
+      console.error(
+        "GET /api/admin/teams/:teamId error:",
+        error
+      );
+
+
+      return res
+        .status(500)
+        .json({
+          message:
+            error.message ||
+            "Failed to fetch team."
+        });
+
+    }
+
+  }
+);
+
+
+/* =========================================================
+   ADMIN DELETE TEAM
+   COMPATIBILITY ENDPOINT
+
+   DELETE /api/admin/teams/:teamId
+========================================================= */
+
+app.delete(
+  "/api/admin/teams/:teamId",
+  async (
+    req,
+    res
+  ) => {
+
+    try {
+
+      if (!Team) {
+
+        return res
+          .status(500)
+          .json({
+            message:
+              "Team model is not registered."
+          });
+
+      }
+
+
+      const team =
+        await Team.findById(
+          req.params.teamId
+        );
+
+
+      if (!team) {
+
+        return res
+          .status(404)
+          .json({
+            message:
+              "Team not found."
+          });
+
+      }
+
+
+      /* -----------------------------------------------------
+         RELEASE CLUB
+      ----------------------------------------------------- */
+
+      if (
+        team.club &&
+        mongoose.models.Club
+      ) {
+
+        const Club =
+          mongoose.models.Club;
+
+
+        await Club.findByIdAndUpdate(
+          team.club,
+          {
+            $set: {
+              assignedTo:
+                null,
+
+              isAvailable:
+                true
+            }
+          }
+        );
+
+      }
+
+
+      /* -----------------------------------------------------
+         RETURN PLAYERS TO POOL
+      ----------------------------------------------------- */
+
+      if (Player) {
+
+        await Player.updateMany(
+          {
+            _id: {
+              $in:
+                Array.isArray(
+                  team.players
+                )
+                  ? team.players
+                  : []
+            }
+          },
+          {
+            $set: {
+              status:
+                "Available",
+
+              activeForAuction:
+                true,
+
+              auctionOrder:
+                null,
+
+              soldTo:
+                null,
+
+              soldPrice:
+                null
+            }
+          }
+        );
+
+      }
+
+
+      /* -----------------------------------------------------
+         DELETE TEAM
+      ----------------------------------------------------- */
+
+      await Team.findByIdAndDelete(
+        req.params.teamId
+      );
+
+
+      /* -----------------------------------------------------
+         BROADCAST UPDATED TEAMS
+      ----------------------------------------------------- */
+
+      if (io) {
+
+        const updatedTeams =
+          await Team.find({
+            isActive:
+              true
+          })
+            .select(
+              "username adminPassword purse club players isActive bestXI"
+            )
+            .populate({
+              path: "club",
+              select:
+                "name country logo"
+            })
+            .populate({
+              path: "players",
+              select:
+                "name age nationality position category rating basePrice image status soldPrice"
+            });
+
+
+        io.to(
+          "auction-room"
+        ).emit(
+          "teams:update",
+          updatedTeams
+        );
+
+      }
+
+
+      return res.json({
+        message:
+          "Team account deleted successfully."
+      });
+
+    } catch (error) {
+
+      console.error(
+        "DELETE /api/admin/teams/:teamId error:",
+        error
+      );
+
+
+      return res
+        .status(500)
+        .json({
+          message:
+            error.message ||
+            "Failed to delete team."
+        });
+
+    }
+
+  }
+);
+
+
+/* =========================================================
+   GENERIC ROUTE LOADER
+========================================================= */
+
+const routesDir =
+  path.join(
+    __dirname,
+    "routes"
+  );
+
+
+function findRouteFile(
+  candidates
+) {
+
+  for (
+    const candidate of candidates
+  ) {
+
+    const fullPath =
+      path.join(
+        routesDir,
+        candidate
+      );
+
+
+    if (
+      fs.existsSync(
+        fullPath
+      )
+    ) {
+
+      return fullPath;
+
+    }
+
+  }
+
+
+  return null;
+
+}
+
+
+function findByKeyword(
+  keywords
+) {
+
+  if (
+    !fs.existsSync(
+      routesDir
+    )
+  ) {
+
+    return null;
+
+  }
+
+
+  const files =
+    fs
+      .readdirSync(
+        routesDir
+      )
+      .filter(
+        (file) =>
+          file
+            .toLowerCase()
+            .endsWith(".js")
+      )
+      .sort();
+
+
+  for (
+    const keyword of keywords
+  ) {
+
+    const match =
+      files.find(
+        (file) =>
+          file
+            .toLowerCase()
+            .includes(
+              keyword.toLowerCase()
+            )
+      );
+
+
+    if (match) {
+
+      return path.join(
+        routesDir,
+        match
+      );
+
+    }
+
+  }
+
+
+  return null;
+
+}
+
+
+function mountRoute(
+  basePath,
+  candidates,
+  keywords = []
+) {
+
+  const routeFile =
+    findRouteFile(
+      candidates
+    ) ||
+    findByKeyword(
+      keywords
+    );
+
+
+  if (!routeFile) {
+
+    console.warn(
+      `Route not found for ${basePath}`
+    );
+
+    return;
+
+  }
+
+
+  try {
+
+    const router =
+      require(
+        routeFile
+      );
+
+
+    app.use(
+      basePath,
+      router
+    );
+
+
+    console.log(
+      `Route mounted: ${basePath} <- ${path.basename(
+        routeFile
+      )}`
+    );
+
+  } catch (
+    error
+  ) {
+
+    console.error(
+      `Failed to mount ${basePath}:`,
+      error
+    );
+
+
+    throw error;
+
+  }
+
+}
+
+
+/* =========================================================
+   ROUTES
+========================================================= */
+
+
+/* ---------------------------------------------------------
+   AUTH
+--------------------------------------------------------- */
+
+mountRoute(
+  "/api/auth",
+  [
+    "authRoutes.js",
+    "auth.js",
+    "authenticationRoutes.js"
+  ],
+  [
+    "auth"
+  ]
+);
+
+
+/* ---------------------------------------------------------
+   TEAM ROUTES
+--------------------------------------------------------- */
+
+mountRoute(
+  "/api/teams",
+  [
+    "teamRoutes.js",
+    "teamsRoutes.js"
+  ],
+  [
+    "teamRoutes",
+    "teams"
+  ]
+);
+
+
+/*
+  IMPORTANT:
+
+  /api/admin/teams
+  and
+  /api/admin/teams/:teamId
+
+  are already handled by the compatibility
+  endpoints above.
+
+  The dynamically loaded admin router should
+  therefore NOT be responsible for these routes.
+*/
+
+mountRoute(
+  "/api/admin",
+  [
+    "adminRoutes.js"
+  ],
+  [
+    "admin"
+  ]
+);
+
+
+/* ---------------------------------------------------------
+   CLUBS
+--------------------------------------------------------- */
+
+mountRoute(
+  "/api/clubs",
+  [
+    "clubRoutes.js",
+    "clubsRoutes.js"
+  ],
+  [
+    "clubRoutes",
+    "clubs"
+  ]
+);
+
+
+/* ---------------------------------------------------------
+   PLAYERS
+--------------------------------------------------------- */
+
+mountRoute(
+  "/api/players",
+  [
+    "playerRoutes.js",
+    "playerRoutes_updated.js",
+    "playerRoutes_final.js"
+  ],
+  [
+    "playerRoutes",
+    "players"
+  ]
+);
+
+
+/* ---------------------------------------------------------
+   AUCTION
+--------------------------------------------------------- */
+
+mountRoute(
+  "/api/auction",
+  [
+    "auctionRoutes.js",
+    "Pasted code(4).js",
+    "auctionRoutes_positional_rules_final.js",
+    "auctionRoutes_updated_positional_rules.js",
+    "auctionRoutes_total_size_only.js",
+    "auctionRoutes_final_rules.js",
+    "auctionRoutes_compact_final.js"
+  ],
+  [
+    "auctionRoutes"
+  ]
+);
+
+
+/* ---------------------------------------------------------
+   TRADE
+--------------------------------------------------------- */
+
+mountRoute(
+  "/api/trade",
+  [
+    "tradeRoutes.js",
+    "tradeRoutes_positional_rules_final.js",
+    "tradeRoutes_total_size_only.js",
+    "tradeRoutes_final_rules.js",
+    "tradeRoutes_compact_final.js",
+    "Pasted code (2).js"
+  ],
+  [
+    "tradeRoutes"
+  ]
+);
+
+
+/* ---------------------------------------------------------
+   RESET
+--------------------------------------------------------- */
+
+mountRoute(
+  "/api/reset",
+  [
+    "resetRoutes.js",
+    "reset.js",
+    "auctionResetRoutes.js"
+  ],
+  [
+    "resetRoutes",
+    "reset"
+  ]
+);
+
+
+/* ---------------------------------------------------------
+   RESULTS
+--------------------------------------------------------- */
+
+mountRoute(
+  "/api/results",
+  [
+    "resultsRoutes.js",
+    "results.js"
+  ],
+  [
+    "resultsRoutes",
+    "results"
+  ]
+);
+
+
+/* =========================================================
+   HEALTH CHECK
+========================================================= */
+
+app.get(
+  "/api/health",
+  (
+    req,
+    res
+  ) => {
+
+    res.json({
+      ok:
+        true,
+
+      service:
+        "Beyond XI API",
+
+      time:
+        new Date()
+    });
+
+  }
+);
+
+
+/* =========================================================
+   ROOT
+========================================================= */
+
+app.get(
+  "/",
+  (
+    req,
+    res
+  ) => {
+
+    res.json({
+      message:
+        "Beyond XI server is running."
+    });
+
+  }
+);
+
 
 /* =========================================================
    404
 ========================================================= */
 
 app.use(
-  (req, res) => {
-    res.status(
-      404
-    ).json({
-      message:
-        "API route not found"
-    });
+  (
+    req,
+    res
+  ) => {
+
+    res
+      .status(404)
+      .json({
+        message:
+          `API route not found: ${req.method} ${req.originalUrl}`
+      });
+
   }
 );
 
+
 /* =========================================================
-   ERROR
+   ERROR HANDLER
 ========================================================= */
 
 app.use(
@@ -293,143 +1075,86 @@ app.use(
     res,
     next
   ) => {
+
     console.error(
-      "Server error:",
+      "Unhandled server error:",
       error
     );
 
-    res.status(
-      500
-    ).json({
-      message:
-        error.message ||
-        "Internal server error"
-    });
+
+    if (
+      res.headersSent
+    ) {
+
+      return next(
+        error
+      );
+
+    }
+
+
+    res
+      .status(
+        Number(
+          error.status
+        ) || 500
+      )
+      .json({
+        message:
+          error.message ||
+          "Internal server error."
+      });
+
   }
 );
 
-/* =========================================================
-   DATABASE
-========================================================= */
-
-const PORT =
-  process.env.PORT ||
-  5000;
-
-const MONGO_URI =
-  process.env.MONGO_URI ||
-  process.env.MONGODB_URI;
-
-if (!MONGO_URI) {
-  console.error(
-    "MONGO_URI is missing from .env"
-  );
-
-  process.exit(
-    1
-  );
-}
-
-/* =========================================================
-   CLEAN OLD INDEXES
-========================================================= */
-
-async function removeOldIndexes() {
-  const db =
-    mongoose.connection.db;
-
-  const oldClubIndexes = [
-    "assignedTo_1",
-    "assignedTo_unique_nonnull"
-  ];
-
-  for (
-    const indexName of
-      oldClubIndexes
-  ) {
-    try {
-      await db
-        .collection("clubs")
-        .dropIndex(
-          indexName
-        );
-
-      console.log(
-        `Removed old club index: ${indexName}`
-      );
-    } catch (error) {
-      if (
-        error.codeName ===
-        "IndexNotFound"
-      ) {
-        console.log(
-          `Club index ${indexName} not found.`
-        );
-      }
-    }
-  }
-
-  try {
-    await db
-      .collection("teams")
-      .dropIndex(
-        "teamName_1"
-      );
-
-    console.log(
-      "Removed old teamName_1 index."
-    );
-  } catch (error) {
-    if (
-      error.codeName ===
-      "IndexNotFound"
-    ) {
-      console.log(
-        "teamName_1 not found."
-      );
-    }
-  }
-}
 
 /* =========================================================
    START SERVER
 ========================================================= */
 
-mongoose
-  .connect(
-    MONGO_URI
-  )
-  .then(
-    async () => {
-      console.log(
-        "MongoDB connected successfully"
-      );
+async function startServer() {
 
-      await removeOldIndexes();
+  try {
 
-      console.log(
-        "Database cleanup completed."
-      );
+    await mongoose.connect(
+      MONGO_URI
+    );
 
-      server.listen(
-        PORT,
-        () => {
-          console.log(
-            `Beyond XI server running on http://localhost:${PORT}`
-          );
-        }
-      );
-    }
-  )
-  .catch(
-    (error) => {
-      console.error(
-        "MongoDB connection error:",
-        error
-      );
 
-      process.exit(
-        1
-      );
-    }
-  );
+    console.log(
+      "MongoDB connected successfully."
+    );
+
+
+    server.listen(
+      PORT,
+      () => {
+
+        console.log(
+          `Beyond XI server running on http://localhost:${PORT}`
+        );
+
+      }
+    );
+
+  } catch (
+    error
+  ) {
+
+    console.error(
+      "Failed to start server:",
+      error
+    );
+
+
+    process.exit(
+      1
+    );
+
+  }
+
+}
+
+
+startServer();

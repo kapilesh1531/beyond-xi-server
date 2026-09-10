@@ -2,17 +2,23 @@ const express = require("express");
 const mongoose = require("mongoose");
 const bcrypt = require("bcryptjs");
 
-const Team = require("../models/Team");
-const Club = require("../models/Club");
+const Team =
+  mongoose.models.Team;
+
+const Club =
+  mongoose.models.Club;
 
 const Player =
   mongoose.models.Player;
+
+const TradeSettings =
+  require("../models/TradeSettings");
 
 const router =
   express.Router();
 
 /* =========================================================
-   CREATE TEAM ACCOUNT
+   CREATE TEAM
 ========================================================= */
 
 router.post(
@@ -32,7 +38,7 @@ router.post(
       ) {
         return res.status(400).json({
           message:
-            "Club, username and password are required"
+            "Club, username and password are required."
         });
       }
 
@@ -52,7 +58,7 @@ router.post(
       if (!club) {
         return res.status(409).json({
           message:
-            "This club is already assigned or unavailable"
+            "This club is already assigned or unavailable."
         });
       }
 
@@ -65,7 +71,7 @@ router.post(
       if (existingUsername) {
         return res.status(409).json({
           message:
-            "Username already exists"
+            "Username already exists."
         });
       }
 
@@ -77,7 +83,8 @@ router.post(
 
       const team =
         new Team({
-          club: clubId,
+          club:
+            clubId,
 
           username:
             cleanUsername,
@@ -94,7 +101,8 @@ router.post(
           players: [],
 
           bestXI: {
-            submitted: false,
+            submitted:
+              false,
 
             formation: {
               goalkeeper: 1,
@@ -105,10 +113,12 @@ router.post(
 
             players: [],
 
-            submittedAt: null
+            submittedAt:
+              null
           },
 
-          isActive: true
+          isActive:
+            true
         });
 
       await team.save();
@@ -121,7 +131,7 @@ router.post(
 
       await club.save();
 
-      const populatedTeam =
+      const populated =
         await Team.findById(
           team._id
         )
@@ -130,33 +140,35 @@ router.post(
             "name country logo"
           )
           .populate({
-            path: "players",
+            path:
+              "players",
             select:
               "name age nationality position category rating basePrice image status soldPrice"
           })
           .populate({
-            path: "bestXI.players",
+            path:
+              "bestXI.players",
             select:
               "name age nationality position category rating image soldPrice"
           });
 
       res.status(201).json({
         message:
-          "Team account created successfully",
+          "Team account created successfully.",
 
         team:
-          populatedTeam
+          populated
       });
     } catch (error) {
       console.error(
-        "Add team error:",
+        "Create team error:",
         error
       );
 
       res.status(500).json({
         message:
           error.message ||
-          "Failed to create team account"
+          "Failed to create team account."
       });
     }
   }
@@ -181,7 +193,7 @@ router.post(
       ) {
         return res.status(400).json({
           message:
-            "Username and password are required"
+            "Username and password are required."
         });
       }
 
@@ -195,12 +207,14 @@ router.post(
             "name country logo"
           )
           .populate({
-            path: "players",
+            path:
+              "players",
             select:
               "name age nationality position category rating basePrice image status soldPrice"
           })
           .populate({
-            path: "bestXI.players",
+            path:
+              "bestXI.players",
             select:
               "name age nationality position category rating image soldPrice"
           });
@@ -208,14 +222,14 @@ router.post(
       if (!team) {
         return res.status(401).json({
           message:
-            "Invalid team username or password"
+            "Invalid team username or password."
         });
       }
 
       if (!team.isActive) {
         return res.status(403).json({
           message:
-            "This team account is inactive"
+            "This team account is inactive."
         });
       }
 
@@ -228,13 +242,13 @@ router.post(
       if (!passwordMatch) {
         return res.status(401).json({
           message:
-            "Invalid team username or password"
+            "Invalid team username or password."
         });
       }
 
       res.json({
         message:
-          "Team login successful",
+          "Team login successful.",
 
         role:
           "team",
@@ -265,7 +279,7 @@ router.post(
 
       res.status(500).json({
         message:
-          "Login failed"
+          "Login failed."
       });
     }
   }
@@ -288,12 +302,14 @@ router.get(
             "name country logo"
           )
           .populate({
-            path: "players",
+            path:
+              "players",
             select:
               "name age nationality position category rating basePrice image status soldPrice"
           })
           .populate({
-            path: "bestXI.players",
+            path:
+              "bestXI.players",
             select:
               "name age nationality position category rating image soldPrice"
           });
@@ -301,7 +317,7 @@ router.get(
       if (!team) {
         return res.status(404).json({
           message:
-            "Team not found"
+            "Team not found."
         });
       }
 
@@ -314,7 +330,7 @@ router.get(
 
       res.status(500).json({
         message:
-          "Failed to fetch team"
+          "Failed to fetch team."
       });
     }
   }
@@ -337,12 +353,14 @@ router.get(
             "name country logo"
           )
           .populate({
-            path: "players",
+            path:
+              "players",
             select:
               "name age nationality position category rating basePrice image status soldPrice"
           })
           .populate({
-            path: "bestXI.players",
+            path:
+              "bestXI.players",
             select:
               "name age nationality position category rating image soldPrice"
           });
@@ -350,9 +368,12 @@ router.get(
       if (!team) {
         return res.status(404).json({
           message:
-            "Team not found"
+            "Team not found."
         });
       }
+
+      const tradeSettings =
+        await TradeSettings.findOne();
 
       res.json({
         teamId:
@@ -365,7 +386,11 @@ router.get(
           team.players,
 
         bestXI:
-          team.bestXI
+          team.bestXI,
+
+        tradeStatus:
+          tradeSettings?.status ||
+          "Closed"
       });
     } catch (error) {
       console.error(
@@ -375,7 +400,7 @@ router.get(
 
       res.status(500).json({
         message:
-          "Failed to fetch Best XI"
+          "Failed to fetch Best XI."
       });
     }
   }
@@ -402,7 +427,7 @@ router.put(
       if (!team) {
         return res.status(404).json({
           message:
-            "Team not found"
+            "Team not found."
         });
       }
 
@@ -411,7 +436,7 @@ router.put(
       ) {
         return res.status(400).json({
           message:
-            "Best XI has already been submitted and cannot be changed."
+            "Final Best XI has already been submitted and is locked."
         });
       }
 
@@ -450,7 +475,21 @@ router.put(
       ) {
         return res.status(400).json({
           message:
-            "Exactly 1 goalkeeper is required."
+            "Exactly one goalkeeper is required."
+        });
+      }
+
+      if (
+        defender < 2 ||
+        defender > 5 ||
+        midfield < 2 ||
+        midfield > 5 ||
+        attack < 1 ||
+        attack > 5
+      ) {
+        return res.status(400).json({
+          message:
+            "Invalid formation."
         });
       }
 
@@ -468,21 +507,8 @@ router.put(
       }
 
       if (
-        defender < 2 ||
-        defender > 5 ||
-        midfield < 2 ||
-        midfield > 5 ||
-        attack < 1 ||
-        attack > 5
-      ) {
-        return res.status(400).json({
-          message:
-            "Invalid formation combination."
-        });
-      }
-
-      if (
-        players.length !== 11
+        players.length !==
+        11
       ) {
         return res.status(400).json({
           message:
@@ -501,7 +527,8 @@ router.put(
         ];
 
       if (
-        uniquePlayers.length !== 11
+        uniquePlayers.length !==
+        11
       ) {
         return res.status(400).json({
           message:
@@ -522,12 +549,14 @@ router.put(
       ) {
         if (
           !squadIds.has(
-            String(playerId)
+            String(
+              playerId
+            )
           )
         ) {
           return res.status(400).json({
             message:
-              "Best XI can only contain players from your squad."
+              "You can only select players from your own squad."
           });
         }
       }
@@ -541,11 +570,12 @@ router.put(
         });
 
       if (
-        selectedPlayers.length !== 11
+        selectedPlayers.length !==
+        11
       ) {
         return res.status(400).json({
           message:
-            "One or more selected players could not be found."
+            "One or more selected players were not found."
         });
       }
 
@@ -558,9 +588,15 @@ router.put(
 
       selectedPlayers.forEach(
         (player) => {
-          counts[
-            player.position
-          ] += 1;
+          if (
+            counts[
+              player.position
+            ] !== undefined
+          ) {
+            counts[
+              player.position
+            ]++;
+          }
         }
       );
 
@@ -576,12 +612,18 @@ router.put(
       ) {
         return res.status(400).json({
           message:
-            "Selected players do not match the chosen formation."
+            "Selected players do not match the formation."
         });
       }
 
+      /*
+        SAVE ONLY.
+        This does NOT permanently submit.
+      */
+
       team.bestXI = {
-        submitted: false,
+        submitted:
+          false,
 
         formation: {
           goalkeeper,
@@ -592,36 +634,18 @@ router.put(
 
         players,
 
-        submittedAt: null
+        submittedAt:
+          null
       };
 
       await team.save();
-
-      const updatedTeam =
-        await Team.findById(
-          team._id
-        )
-          .populate(
-            "club",
-            "name country logo"
-          )
-          .populate({
-            path: "players",
-            select:
-              "name age nationality position category rating basePrice image status soldPrice"
-          })
-          .populate({
-            path: "bestXI.players",
-            select:
-              "name age nationality position category rating image soldPrice"
-          });
 
       res.json({
         message:
           "Best XI draft saved successfully.",
 
         bestXI:
-          updatedTeam.bestXI
+          team.bestXI
       });
     } catch (error) {
       console.error(
@@ -638,13 +662,32 @@ router.put(
 );
 
 /* =========================================================
-   SUBMIT FINAL BEST XI
+   FINAL BEST XI SUBMISSION
 ========================================================= */
 
 router.post(
   "/:id/best-xi/submit",
   async (req, res) => {
     try {
+      /*
+        FINAL SUBMISSION IS ONLY ALLOWED
+        AFTER THE TRADE WINDOW HAS ENDED.
+      */
+
+      const tradeSettings =
+        await TradeSettings.findOne();
+
+      if (
+        !tradeSettings ||
+        tradeSettings.status !==
+          "Ended"
+      ) {
+        return res.status(400).json({
+          message:
+            "Final Best XI submission is available only after the trade window has ended."
+        });
+      }
+
       const {
         formation,
         players
@@ -658,7 +701,7 @@ router.post(
       if (!team) {
         return res.status(404).json({
           message:
-            "Team not found"
+            "Team not found."
         });
       }
 
@@ -667,7 +710,7 @@ router.post(
       ) {
         return res.status(400).json({
           message:
-            "Best XI has already been submitted."
+            "Best XI has already been submitted and is locked."
         });
       }
 
@@ -711,12 +754,13 @@ router.post(
       ) {
         return res.status(400).json({
           message:
-            "Best XI must contain exactly 11 players and 1 goalkeeper."
+            "Formation must contain exactly 11 players and one goalkeeper."
         });
       }
 
       if (
-        players.length !== 11
+        players.length !==
+        11
       ) {
         return res.status(400).json({
           message:
@@ -757,12 +801,14 @@ router.post(
       ) {
         if (
           !squadIds.has(
-            String(playerId)
+            String(
+              playerId
+            )
           )
         ) {
           return res.status(400).json({
             message:
-              "You can only submit players from your own squad."
+              "You can only submit players from your final squad."
           });
         }
       }
@@ -781,7 +827,7 @@ router.post(
       ) {
         return res.status(400).json({
           message:
-            "One or more selected players could not be found."
+            "One or more players could not be found."
         });
       }
 
@@ -794,9 +840,15 @@ router.post(
 
       selectedPlayers.forEach(
         (player) => {
-          counts[
-            player.position
-          ] += 1;
+          if (
+            counts[
+              player.position
+            ] !== undefined
+          ) {
+            counts[
+              player.position
+            ]++;
+          }
         }
       );
 
@@ -812,12 +864,17 @@ router.post(
       ) {
         return res.status(400).json({
           message:
-            "Selected players do not match the chosen formation."
+            "Selected players do not match the formation."
         });
       }
 
+      /*
+        FINAL LOCK
+      */
+
       team.bestXI = {
-        submitted: true,
+        submitted:
+          true,
 
         formation: {
           goalkeeper,
@@ -836,7 +893,8 @@ router.post(
 
       const updatedTeams =
         await Team.find({
-          isActive: true
+          isActive:
+            true
         })
           .select(
             "club username purse players bestXI isActive"
@@ -846,12 +904,16 @@ router.post(
             "name country logo"
           )
           .populate({
-            path: "players",
+            path:
+              "players",
+
             select:
               "name age nationality position category rating basePrice image status soldPrice"
           })
           .populate({
-            path: "bestXI.players",
+            path:
+              "bestXI.players",
+
             select:
               "name age nationality position category rating image soldPrice"
           });
@@ -868,7 +930,7 @@ router.post(
         );
       }
 
-      const updatedTeam =
+      const currentTeam =
         updatedTeams.find(
           (item) =>
             String(item._id) ===
@@ -877,21 +939,21 @@ router.post(
 
       res.json({
         message:
-          "Best XI submitted successfully.",
+          "Final Best XI submitted successfully.",
 
         bestXI:
-          updatedTeam?.bestXI ||
+          currentTeam?.bestXI ||
           team.bestXI
       });
     } catch (error) {
       console.error(
-        "Submit Best XI error:",
+        "Final Best XI submission error:",
         error
       );
 
       res.status(500).json({
         message:
-          "Failed to submit Best XI."
+          "Failed to submit final Best XI."
       });
     }
   }

@@ -67,6 +67,11 @@ const teamSchema = new mongoose.Schema(
       required: true
     },
 
+    /*
+      Stored separately so the admin can
+      display/recover the team password
+      according to your current system design.
+    */
     adminPassword: {
       type: String,
       default: ""
@@ -86,6 +91,7 @@ const teamSchema = new mongoose.Schema(
 
     bestXI: {
       type: bestXISchema,
+
       default: () => ({
         submitted: false,
 
@@ -113,4 +119,8 @@ const teamSchema = new mongoose.Schema(
 );
 
 module.exports =
-  mongoose.model("Team", teamSchema);
+  mongoose.models.Team ||
+  mongoose.model(
+    "Team",
+    teamSchema
+  );

@@ -6,17 +6,30 @@ const Auction = require("../models/Auction");
 
 const router = express.Router();
 
-const Player = mongoose.model("Player");
+const Player =
+  mongoose.models.Player;
 
-const MIN_BID_INCREMENT = 1000000;
+const MIN_BID_INCREMENT =
+  1000000;
+
+const MIN_SQUAD_SIZE =
+  11;
+
+const MAX_SQUAD_SIZE =
+  15;
 
 /* =========================================================
-   BROADCAST COMPLETE STATE
+   BROADCAST COMPLETE AUCTION STATE
 ========================================================= */
 
-async function broadcastAuctionState(req) {
+async function broadcastAuctionState(
+  req
+) {
   try {
-    const io = req.app.get("io");
+    const io =
+      req.app.get(
+        "io"
+      );
 
     if (!io) {
       return;
@@ -25,29 +38,45 @@ async function broadcastAuctionState(req) {
     const auction =
       await Auction.findOne()
         .sort({
-          createdAt: -1
+          createdAt:
+            -1
         })
-        .populate("currentPlayer")
+        .populate(
+          "currentPlayer"
+        )
         .populate({
-          path: "highestBidder",
+          path:
+            "highestBidder",
+
           populate: {
-            path: "club",
-            select: "name country logo"
+            path:
+              "club",
+
+            select:
+              "name country logo"
           },
+
           select:
             "username purse isActive club"
         })
         .populate({
-          path: "results.player",
+          path:
+            "results.player",
+
           select:
-            "name age nationality position category rating basePrice image status soldPrice"
+            "name age nationality position category rating basePrice image status soldPrice auctionOrder"
         })
         .populate({
-          path: "results.team",
+          path:
+            "results.team",
+
           select:
             "username purse club",
+
           populate: {
-            path: "club",
+            path:
+              "club",
+
             select:
               "name country logo"
           }
@@ -56,7 +85,11 @@ async function broadcastAuctionState(req) {
     const allPlayers =
       await Player.find({})
         .sort({
-          createdAt: -1
+          auctionOrder:
+            1,
+
+          createdAt:
+            1
         })
         .select(
           "name age nationality position category rating basePrice image status activeForAuction auctionOrder soldTo soldPrice"
@@ -64,33 +97,44 @@ async function broadcastAuctionState(req) {
 
     const teams =
       await Team.find({
-        isActive: true
+        isActive:
+          true
       })
         .select(
-          "username purse club players isActive"
+          "username purse club players isActive bestXI"
         )
         .populate({
-          path: "club",
+          path:
+            "club",
+
           select:
             "name country logo"
         })
         .populate({
-          path: "players",
+          path:
+            "players",
+
           select:
-            "name age nationality position category rating basePrice image status soldPrice"
+            "name age nationality position category rating basePrice image status soldPrice auctionOrder"
         });
 
-    io.to("auction-room").emit(
+    io.to(
+      "auction-room"
+    ).emit(
       "auction:update",
       auction
     );
 
-    io.to("auction-room").emit(
+    io.to(
+      "auction-room"
+    ).emit(
       "players:update",
       allPlayers
     );
 
-    io.to("auction-room").emit(
+    io.to(
+      "auction-room"
+    ).emit(
       "teams:update",
       teams
     );
@@ -104,90 +148,141 @@ async function broadcastAuctionState(req) {
 
 /* =========================================================
    GET CURRENT AUCTION
-========================================================= */
 
-router.get("/", async (req, res) => {
-  try {
-    const auction =
-      await Auction.findOne()
-        .sort({
-          createdAt: -1
-        })
-        .populate("currentPlayer")
-        .populate({
-          path: "highestBidder",
-          populate: {
-            path: "club",
-            select:
-              "name country logo"
-          },
-          select:
-            "username purse isActive club"
-        })
-        .populate({
-          path: "results.player",
-          select:
-            "name age nationality position category rating basePrice image status soldPrice"
-        })
-        .populate({
-          path: "results.team",
-          select:
-            "username purse club",
-          populate: {
-            path: "club",
-            select:
-              "name country logo"
-          }
-        });
-
-    if (!auction) {
-      return res.json({
-        status: "Not Started",
-        currentPlayer: null,
-        currentBid: 0,
-        highestBidder: null,
-        results: []
-      });
-    }
-
-    res.json(auction);
-  } catch (error) {
-    console.error(
-      "Get auction error:",
-      error
-    );
-
-    res.status(500).json({
-      message:
-        "Failed to fetch auction."
-    });
-  }
-});
-
-/* =========================================================
-   AUCTION HISTORY
+   GET /api/auction
 ========================================================= */
 
 router.get(
-  "/history",
-  async (req, res) => {
+  "/",
+  async (
+    req,
+    res
+  ) => {
     try {
       const auction =
         await Auction.findOne()
           .sort({
-            createdAt: -1
+            createdAt:
+              -1
           })
+          .populate(
+            "currentPlayer"
+          )
           .populate({
-            path: "results.player",
+            path:
+              "highestBidder",
+
+            populate: {
+              path:
+                "club",
+
+              select:
+                "name country logo"
+            },
+
             select:
-              "name age nationality position category rating basePrice image status soldPrice"
+              "username purse isActive club"
           })
           .populate({
-            path: "results.team",
+            path:
+              "results.player",
+
+            select:
+              "name age nationality position category rating basePrice image status soldPrice auctionOrder"
+          })
+          .populate({
+            path:
+              "results.team",
+
             select:
               "username purse club",
+
             populate: {
-              path: "club",
+              path:
+                "club",
+
+              select:
+                "name country logo"
+            }
+          });
+
+      if (!auction) {
+        return res.json({
+          status:
+            "Not Started",
+
+          currentPlayer:
+            null,
+
+          currentBid:
+            0,
+
+          highestBidder:
+            null,
+
+          results:
+            []
+        });
+      }
+
+      res.json(
+        auction
+      );
+    } catch (error) {
+      console.error(
+        "Get auction error:",
+        error
+      );
+
+      res
+        .status(
+          500
+        )
+        .json({
+          message:
+            "Failed to fetch auction."
+        });
+    }
+  }
+);
+
+/* =========================================================
+   AUCTION HISTORY
+
+   GET /api/auction/history
+========================================================= */
+
+router.get(
+  "/history",
+  async (
+    req,
+    res
+  ) => {
+    try {
+      const auction =
+        await Auction.findOne()
+          .sort({
+            createdAt:
+              -1
+          })
+          .populate({
+            path:
+              "results.player",
+
+            select:
+              "name age nationality position category rating basePrice image status soldPrice auctionOrder"
+          })
+          .populate({
+            path:
+              "results.team",
+
+            select:
+              "username purse club",
+
+            populate: {
+              path:
+                "club",
+
               select:
                 "name country logo"
             }
@@ -195,7 +290,8 @@ router.get(
 
       res.json({
         results:
-          auction?.results || []
+          auction?.results ||
+          []
       });
     } catch (error) {
       console.error(
@@ -203,35 +299,63 @@ router.get(
         error
       );
 
-      res.status(500).json({
-        message:
-          "Failed to fetch auction history."
-      });
+      res
+        .status(
+          500
+        )
+        .json({
+          message:
+            "Failed to fetch auction history."
+        });
     }
   }
 );
 
 /* =========================================================
    START AUCTION
+
+   IMPORTANT:
+
+   THERE IS NO RANDOMIZATION.
+
+   The order is:
+
+   1. auctionOrder
+   2. createdAt
+   3. _id
+
+   Once playerPool is created,
+   that pool becomes the fixed auction sequence.
 ========================================================= */
 
 router.post(
   "/start",
-  async (req, res) => {
+  async (
+    req,
+    res
+  ) => {
     try {
       const activePlayers =
         await Player.find({
-          activeForAuction: true,
-          status: "Available"
+          activeForAuction:
+            true,
+
+          status:
+            "Available"
         });
 
       if (
-        activePlayers.length === 0
+        activePlayers.length ===
+        0
       ) {
-        return res.status(400).json({
-          message:
-            "No active players are available for the auction."
-        });
+        return res
+          .status(
+            400
+          )
+          .json({
+            message:
+              "No active players are available for the auction."
+          });
       }
 
       const runningAuction =
@@ -244,29 +368,146 @@ router.post(
           }
         });
 
-      if (runningAuction) {
-        return res.status(400).json({
-          message:
-            "An auction is already running."
-        });
+      if (
+        runningAuction
+      ) {
+        return res
+          .status(
+            400
+          )
+          .json({
+            message:
+              "An auction is already running."
+          });
       }
 
-      const shuffledPlayers =
-        [...activePlayers].sort(
-          () =>
-            Math.random() - 0.5
+      /* =====================================================
+         SORT BY SAVED AUCTION ORDER
+      ===================================================== */
+
+      const orderedPlayers =
+        [
+          ...activePlayers
+        ].sort(
+          (
+            a,
+            b
+          ) => {
+            const orderA =
+              Number(
+                a.auctionOrder
+              );
+
+            const orderB =
+              Number(
+                b.auctionOrder
+              );
+
+            const validA =
+              Number.isFinite(
+                orderA
+              ) &&
+              orderA >
+                0;
+
+            const validB =
+              Number.isFinite(
+                orderB
+              ) &&
+              orderB >
+                0;
+
+            if (
+              validA &&
+              validB
+            ) {
+              return (
+                orderA -
+                orderB
+              );
+            }
+
+            if (
+              validA &&
+              !validB
+            ) {
+              return -1;
+            }
+
+            if (
+              !validA &&
+              validB
+            ) {
+              return 1;
+            }
+
+            const createdA =
+              a.createdAt
+                ? new Date(
+                    a.createdAt
+                  ).getTime()
+                : 0;
+
+            const createdB =
+              b.createdAt
+                ? new Date(
+                    b.createdAt
+                  ).getTime()
+                : 0;
+
+            return (
+              createdA -
+              createdB
+            );
+          }
         );
 
+      if (
+        orderedPlayers.length ===
+        0
+      ) {
+        return res
+          .status(
+            400
+          )
+          .json({
+            message:
+              "No players available for auction."
+          });
+      }
+
+      /* =====================================================
+         LOCK THE ORDER
+
+         Example:
+
+         auctionOrder 15
+         auctionOrder 3
+         auctionOrder 8
+         auctionOrder 1
+
+         becomes:
+
+         1
+         3
+         8
+         15
+
+         The relative order is preserved.
+      ===================================================== */
+
       const orderUpdates =
-        shuffledPlayers.map(
+        orderedPlayers.map(
           (
             player,
             index
           ) => ({
             updateOne: {
               filter: {
-                _id: player._id
+                _id:
+                  player._id
               },
+
               update: {
                 $set: {
                   auctionOrder:
@@ -277,44 +518,54 @@ router.post(
           })
         );
 
-      if (
-        orderUpdates.length > 0
-      ) {
-        await Player.bulkWrite(
-          orderUpdates
+      await Player.bulkWrite(
+        orderUpdates
+      );
+
+      /* =====================================================
+         CREATE FIXED PLAYER POOL
+      ===================================================== */
+
+      const playerPool =
+        orderedPlayers.map(
+          (
+            player
+          ) =>
+            player._id
         );
-      }
 
       const firstPlayer =
-        shuffledPlayers[0];
+        orderedPlayers[0];
 
       const auction =
         await Auction.create({
-          status: "Live",
+          status:
+            "Live",
 
-          playerPool:
-            shuffledPlayers.map(
-              (player) =>
-                player._id
-            ),
+          playerPool,
 
           currentPlayer:
             firstPlayer._id,
 
-          currentPlayerIndex: 0,
+          currentPlayerIndex:
+            0,
 
           currentBid:
             Number(
               firstPlayer.basePrice
             ),
 
-          highestBidder: null,
+          highestBidder:
+            null,
 
-          bids: [],
+          bids:
+            [],
 
-          results: [],
+          results:
+            [],
 
-          startedAt: new Date()
+          startedAt:
+            new Date()
         });
 
       const populatedAuction =
@@ -324,12 +575,17 @@ router.post(
           "currentPlayer"
         );
 
-      res.status(201).json({
-        message:
-          "Auction started successfully.",
-        auction:
-          populatedAuction
-      });
+      res
+        .status(
+          201
+        )
+        .json({
+          message:
+            "Auction started successfully in the saved player order.",
+
+          auction:
+            populatedAuction
+        });
 
       await broadcastAuctionState(
         req
@@ -340,21 +596,31 @@ router.post(
         error
       );
 
-      res.status(500).json({
-        message:
-          "Failed to start auction."
-      });
+      res
+        .status(
+          500
+        )
+        .json({
+          message:
+            error.message ||
+            "Failed to start auction."
+        });
     }
   }
 );
 
 /* =========================================================
    MANUAL SELL
+
+   POST /api/auction/manual-sell
 ========================================================= */
 
 router.post(
   "/manual-sell",
-  async (req, res) => {
+  async (
+    req,
+    res
+  ) => {
     const session =
       await mongoose.startSession();
 
@@ -367,7 +633,9 @@ router.post(
       } = req.body;
 
       const salePrice =
-        Number(finalPrice);
+        Number(
+          finalPrice
+        );
 
       if (!teamId) {
         throw new Error(
@@ -388,8 +656,11 @@ router.post(
 
       const auction =
         await Auction.findOne({
-          status: "Live"
-        }).session(session);
+          status:
+            "Live"
+        }).session(
+          session
+        );
 
       if (!auction) {
         throw new Error(
@@ -397,7 +668,9 @@ router.post(
         );
       }
 
-      if (!auction.currentPlayer) {
+      if (
+        !auction.currentPlayer
+      ) {
         throw new Error(
           "No current player."
         );
@@ -406,12 +679,16 @@ router.post(
       const team =
         await Team.findById(
           teamId
-        ).session(session);
+        ).session(
+          session
+        );
 
       const player =
         await Player.findById(
           auction.currentPlayer
-        ).session(session);
+        ).session(
+          session
+        );
 
       if (!team) {
         throw new Error(
@@ -432,7 +709,35 @@ router.post(
       }
 
       if (
-        Number(team.purse) <
+        !Array.isArray(
+          team.players
+        )
+      ) {
+        team.players =
+          [];
+      }
+
+      /* =====================================================
+         MAXIMUM SQUAD SIZE
+      ===================================================== */
+
+      if (
+        team.players.length >=
+        MAX_SQUAD_SIZE
+      ) {
+        throw new Error(
+          `The selected team already has the maximum squad size of ${MAX_SQUAD_SIZE} players.`
+        );
+      }
+
+      /* =====================================================
+         PURSE CHECK
+      ===================================================== */
+
+      if (
+        Number(
+          team.purse
+        ) <
         salePrice
       ) {
         throw new Error(
@@ -440,44 +745,74 @@ router.post(
         );
       }
 
+      /* =====================================================
+         PLAYER STATUS
+      ===================================================== */
+
       if (
-        player.status === "Sold"
+        player.status ===
+        "Sold"
       ) {
         throw new Error(
           "This player has already been sold."
         );
       }
 
-      if (
-        !Array.isArray(
-          team.players
-        )
-      ) {
-        team.players = [];
-      }
+      /* =====================================================
+         DUPLICATE OWNERSHIP
+      ===================================================== */
 
       const alreadyOwned =
         team.players.some(
-          (playerId) =>
-            String(playerId) ===
-            String(player._id)
+          (
+            playerId
+          ) =>
+            String(
+              playerId
+            ) ===
+            String(
+              player._id
+            )
         );
 
-      if (!alreadyOwned) {
-        team.players.push(
-          player._id
+      if (
+        alreadyOwned
+      ) {
+        throw new Error(
+          "This team already owns this player."
         );
       }
 
+      /* =====================================================
+         ADD PLAYER
+      ===================================================== */
+
+      team.players.push(
+        player._id
+      );
+
       team.purse =
-        Number(team.purse) -
+        Number(
+          team.purse
+        ) -
         salePrice;
 
-      player.status = "Sold";
+      /* =====================================================
+         UPDATE PLAYER
+
+         IMPORTANT:
+         DO NOT erase auctionOrder.
+      ===================================================== */
+
+      player.status =
+        "Sold";
+
       player.activeForAuction =
         false;
-      player.auctionOrder = null;
-      player.soldTo = team._id;
+
+      player.soldTo =
+        team._id;
+
       player.soldPrice =
         salePrice;
 
@@ -487,20 +822,40 @@ router.post(
       auction.currentBid =
         salePrice;
 
+      /* =====================================================
+         RECORD RESULT
+      ===================================================== */
+
       const alreadyRecorded =
         auction.results.some(
-          (result) =>
+          (
+            result
+          ) =>
             result.player &&
-            String(result.player) ===
-            String(player._id)
+            String(
+              result.player
+            ) ===
+            String(
+              player._id
+            )
         );
 
-      if (!alreadyRecorded) {
+      if (
+        !alreadyRecorded
+      ) {
         auction.results.push({
-          player: player._id,
-          result: "Sold",
-          team: team._id,
-          amount: salePrice,
+          player:
+            player._id,
+
+          result:
+            "Sold",
+
+          team:
+            team._id,
+
+          amount:
+            salePrice,
+
           completedAt:
             new Date()
         });
@@ -528,26 +883,38 @@ router.post(
             "currentPlayer"
           )
           .populate({
-            path: "highestBidder",
+            path:
+              "highestBidder",
+
             populate: {
-              path: "club",
+              path:
+                "club",
+
               select:
                 "name country logo"
             },
+
             select:
               "username purse isActive club"
           })
           .populate({
-            path: "results.player",
+            path:
+              "results.player",
+
             select:
-              "name age nationality position category rating basePrice image status soldPrice"
+              "name age nationality position category rating basePrice image status soldPrice auctionOrder"
           })
           .populate({
-            path: "results.team",
+            path:
+              "results.team",
+
             select:
               "username purse club",
+
             populate: {
-              path: "club",
+              path:
+                "club",
+
               select:
                 "name country logo"
             }
@@ -558,26 +925,33 @@ router.post(
           team._id
         )
           .select(
-            "username purse club players isActive"
+            "username purse club players isActive bestXI"
           )
           .populate({
-            path: "club",
+            path:
+              "club",
+
             select:
               "name country logo"
           })
           .populate({
-            path: "players",
+            path:
+              "players",
+
             select:
-              "name age nationality position category rating basePrice image status soldPrice"
+              "name age nationality position category rating basePrice image status soldPrice auctionOrder"
           });
 
       res.json({
         message:
           "Player sold successfully.",
+
         auction:
           updatedAuction,
+
         team:
           updatedTeam,
+
         player
       });
 
@@ -594,11 +968,15 @@ router.post(
         error
       );
 
-      res.status(400).json({
-        message:
-          error.message ||
-          "Failed to sell player."
-      });
+      res
+        .status(
+          400
+        )
+        .json({
+          message:
+            error.message ||
+            "Failed to sell player."
+        });
     } finally {
       session.endSession();
     }
@@ -607,11 +985,16 @@ router.post(
 
 /* =========================================================
    MARK UNSOLD
+
+   POST /api/auction/unsold
 ========================================================= */
 
 router.post(
   "/unsold",
-  async (req, res) => {
+  async (
+    req,
+    res
+  ) => {
     const session =
       await mongoose.startSession();
 
@@ -620,8 +1003,11 @@ router.post(
 
       const auction =
         await Auction.findOne({
-          status: "Live"
-        }).session(session);
+          status:
+            "Live"
+        }).session(
+          session
+        );
 
       if (!auction) {
         throw new Error(
@@ -629,7 +1015,9 @@ router.post(
         );
       }
 
-      if (!auction.currentPlayer) {
+      if (
+        !auction.currentPlayer
+      ) {
         throw new Error(
           "No current player."
         );
@@ -638,7 +1026,9 @@ router.post(
       const player =
         await Player.findById(
           auction.currentPlayer
-        ).session(session);
+        ).session(
+          session
+        );
 
       if (!player) {
         throw new Error(
@@ -647,34 +1037,61 @@ router.post(
       }
 
       if (
-        player.status === "Sold"
+        player.status ===
+        "Sold"
       ) {
         throw new Error(
           "This player has already been sold."
         );
       }
 
-      player.status = "Unsold";
+      player.status =
+        "Unsold";
+
       player.activeForAuction =
         false;
-      player.auctionOrder = null;
-      player.soldTo = null;
-      player.soldPrice = null;
+
+      /*
+        IMPORTANT:
+        auctionOrder remains unchanged.
+      */
+
+      player.soldTo =
+        null;
+
+      player.soldPrice =
+        null;
 
       const alreadyRecorded =
         auction.results.some(
-          (result) =>
+          (
+            result
+          ) =>
             result.player &&
-            String(result.player) ===
-            String(player._id)
+            String(
+              result.player
+            ) ===
+            String(
+              player._id
+            )
         );
 
-      if (!alreadyRecorded) {
+      if (
+        !alreadyRecorded
+      ) {
         auction.results.push({
-          player: player._id,
-          result: "Unsold",
-          team: null,
-          amount: 0,
+          player:
+            player._id,
+
+          result:
+            "Unsold",
+
+          team:
+            null,
+
+          amount:
+            0,
+
           completedAt:
             new Date()
         });
@@ -698,16 +1115,23 @@ router.post(
             "currentPlayer"
           )
           .populate({
-            path: "results.player",
+            path:
+              "results.player",
+
             select:
-              "name age nationality position category rating basePrice image status soldPrice"
+              "name age nationality position category rating basePrice image status soldPrice auctionOrder"
           })
           .populate({
-            path: "results.team",
+            path:
+              "results.team",
+
             select:
               "username purse club",
+
             populate: {
-              path: "club",
+              path:
+                "club",
+
               select:
                 "name country logo"
             }
@@ -716,8 +1140,10 @@ router.post(
       res.json({
         message:
           "Player marked unsold.",
+
         auction:
           updatedAuction,
+
         player
       });
 
@@ -734,11 +1160,15 @@ router.post(
         error
       );
 
-      res.status(400).json({
-        message:
-          error.message ||
-          "Failed to mark player unsold."
-      });
+      res
+        .status(
+          400
+        )
+        .json({
+          message:
+            error.message ||
+            "Failed to mark player unsold."
+        });
     } finally {
       session.endSession();
     }
@@ -747,59 +1177,173 @@ router.post(
 
 /* =========================================================
    NEXT PLAYER
+
+   POST /api/auction/next
+
+   IMPORTANT:
+
+   We NEVER search for a random player here.
+
+   We directly use:
+
+   auction.playerPool[nextIndex]
 ========================================================= */
 
 router.post(
   "/next",
-  async (req, res) => {
+  async (
+    req,
+    res
+  ) => {
     try {
       const auction =
         await Auction.findOne({
-          status: "Live"
+          status:
+            "Live"
         });
 
       if (!auction) {
-        return res.status(400).json({
-          message:
-            "No live auction found."
-        });
+        return res
+          .status(
+            400
+          )
+          .json({
+            message:
+              "No live auction found."
+          });
       }
 
-      if (!auction.currentPlayer) {
-        return res.status(400).json({
-          message:
-            "There is no current player."
-        });
+      if (
+        !auction.currentPlayer
+      ) {
+        return res
+          .status(
+            400
+          )
+          .json({
+            message:
+              "There is no current player."
+          });
       }
+
+      /* =====================================================
+         CURRENT PLAYER MUST BE COMPLETED
+      ===================================================== */
 
       const currentPlayerId =
         auction.currentPlayer;
 
       const alreadyRecorded =
         auction.results.some(
-          (result) =>
+          (
+            result
+          ) =>
             result.player &&
-            String(result.player) ===
+            String(
+              result.player
+            ) ===
             String(
               currentPlayerId
             )
         );
 
-      if (!alreadyRecorded) {
-        return res.status(400).json({
-          message:
-            "Complete the current player as SOLD or UNSOLD before moving to the next player."
-        });
+      if (
+        !alreadyRecorded
+      ) {
+        return res
+          .status(
+            400
+          )
+          .json({
+            message:
+              "Complete the current player as SOLD or UNSOLD before moving to the next player."
+          });
       }
 
+      /* =====================================================
+         NEXT INDEX
+      ===================================================== */
+
       const nextIndex =
-        auction.currentPlayerIndex +
-        1;
+        Number(
+          auction.currentPlayerIndex
+        ) + 1;
+
+      /* =====================================================
+         FINISH AUCTION
+      ===================================================== */
 
       if (
         nextIndex >=
         auction.playerPool.length
       ) {
+        const activeTeams =
+          await Team.find({
+            isActive:
+              true
+          }).select(
+            "username players"
+          );
+
+        const invalidTeams =
+          activeTeams.filter(
+            (
+              team
+            ) => {
+              const count =
+                Array.isArray(
+                  team.players
+                )
+                  ? team
+                      .players
+                      .length
+                  : 0;
+
+              return (
+                count <
+                  MIN_SQUAD_SIZE ||
+                count >
+                  MAX_SQUAD_SIZE
+              );
+            }
+          );
+
+        if (
+          invalidTeams.length >
+          0
+        ) {
+          const details =
+            invalidTeams
+              .map(
+                (
+                  team
+                ) => {
+                  const count =
+                    Array.isArray(
+                      team.players
+                    )
+                      ? team
+                          .players
+                          .length
+                      : 0;
+
+                  return `${team.username}: ${count}/${MAX_SQUAD_SIZE}`;
+                }
+              )
+              .join(
+                " | "
+              );
+
+          return res
+            .status(
+              400
+            )
+            .json({
+              message:
+                `Auction cannot be completed. Every active team must have ${MIN_SQUAD_SIZE}-${MAX_SQUAD_SIZE} players. ${details}`
+            });
+        }
+
         auction.status =
           "Completed";
 
@@ -809,7 +1353,8 @@ router.post(
         auction.highestBidder =
           null;
 
-        auction.currentBid = 0;
+        auction.currentBid =
+          0;
 
         auction.currentPlayerIndex =
           auction.playerPool.length;
@@ -817,13 +1362,15 @@ router.post(
         auction.completedAt =
           new Date();
 
-        auction.bids = [];
+        auction.bids =
+          [];
 
         await auction.save();
 
         res.json({
           message:
-            "Auction completed.",
+            "Auction completed successfully.",
+
           auction
         });
 
@@ -833,6 +1380,10 @@ router.post(
 
         return;
       }
+
+      /* =====================================================
+         GET THE NEXT PLAYER DIRECTLY FROM PLAYER POOL
+      ===================================================== */
 
       const nextPlayerId =
         auction.playerPool[
@@ -845,20 +1396,32 @@ router.post(
         );
 
       if (!nextPlayer) {
-        return res.status(404).json({
-          message:
-            "Next player not found."
-        });
+        return res
+          .status(
+            404
+          )
+          .json({
+            message:
+              "Next player not found."
+          });
       }
+
+      /*
+        DO NOT FIND ANOTHER PLAYER.
+
+        DO NOT SORT.
+
+        DO NOT RANDOMIZE.
+
+        Just use the exact player
+        stored in playerPool.
+      */
 
       nextPlayer.status =
         "Available";
 
       nextPlayer.activeForAuction =
         true;
-
-      nextPlayer.auctionOrder =
-        nextIndex + 1;
 
       await nextPlayer.save();
 
@@ -876,7 +1439,8 @@ router.post(
       auction.highestBidder =
         null;
 
-      auction.bids = [];
+      auction.bids =
+        [];
 
       await auction.save();
 
@@ -890,6 +1454,7 @@ router.post(
       res.json({
         message:
           "Next player loaded.",
+
         auction:
           updatedAuction
       });
@@ -903,33 +1468,45 @@ router.post(
         error
       );
 
-      res.status(400).json({
-        message:
-          error.message ||
-          "Failed to load next player."
-      });
+      res
+        .status(
+          400
+        )
+        .json({
+          message:
+            error.message ||
+            "Failed to load next player."
+        });
     }
   }
 );
 
 /* =========================================================
-   PAUSE
+   PAUSE AUCTION
 ========================================================= */
 
 router.post(
   "/pause",
-  async (req, res) => {
+  async (
+    req,
+    res
+  ) => {
     try {
       const auction =
         await Auction.findOne({
-          status: "Live"
+          status:
+            "Live"
         });
 
       if (!auction) {
-        return res.status(400).json({
-          message:
-            "No live auction found."
-        });
+        return res
+          .status(
+            400
+          )
+          .json({
+            message:
+              "No live auction found."
+          });
       }
 
       auction.status =
@@ -940,6 +1517,7 @@ router.post(
       res.json({
         message:
           "Auction paused.",
+
         auction
       });
 
@@ -952,32 +1530,44 @@ router.post(
         error
       );
 
-      res.status(500).json({
-        message:
-          "Failed to pause auction."
-      });
+      res
+        .status(
+          500
+        )
+        .json({
+          message:
+            "Failed to pause auction."
+        });
     }
   }
 );
 
 /* =========================================================
-   RESUME
+   RESUME AUCTION
 ========================================================= */
 
 router.post(
   "/resume",
-  async (req, res) => {
+  async (
+    req,
+    res
+  ) => {
     try {
       const auction =
         await Auction.findOne({
-          status: "Paused"
+          status:
+            "Paused"
         });
 
       if (!auction) {
-        return res.status(400).json({
-          message:
-            "No paused auction found."
-        });
+        return res
+          .status(
+            400
+          )
+          .json({
+            message:
+              "No paused auction found."
+          });
       }
 
       auction.status =
@@ -988,6 +1578,7 @@ router.post(
       res.json({
         message:
           "Auction resumed.",
+
         auction
       });
 
@@ -1000,12 +1591,21 @@ router.post(
         error
       );
 
-      res.status(500).json({
-        message:
-          "Failed to resume auction."
-      });
+      res
+        .status(
+          500
+        )
+        .json({
+          message:
+            "Failed to resume auction."
+        });
     }
   }
 );
 
-module.exports = router;
+/* =========================================================
+   EXPORT
+========================================================= */
+
+module.exports =
+  router;

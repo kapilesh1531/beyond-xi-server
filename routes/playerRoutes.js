@@ -39,16 +39,24 @@ const imageStorage =
       const uniqueName =
         Date.now() +
         "-" +
-        Math.round(Math.random() * 1e9) +
-        path.extname(file.originalname);
+        Math.round(
+          Math.random() * 1e9
+        ) +
+        path.extname(
+          file.originalname
+        );
 
-      cb(null, uniqueName);
+      cb(
+        null,
+        uniqueName
+      );
     }
   });
 
 const imageUpload =
   multer({
-    storage: imageStorage,
+    storage:
+      imageStorage,
 
     limits: {
       fileSize:
@@ -79,7 +87,10 @@ const imageUpload =
         );
       }
 
-      cb(null, true);
+      cb(
+        null,
+        true
+      );
     }
   });
 
@@ -146,7 +157,10 @@ const importUpload =
         }
       }
 
-      cb(null, true);
+      cb(
+        null,
+        true
+      );
     }
   });
 
@@ -177,20 +191,71 @@ const allowedImageExtensions = [
 
 /* =========================================================
    NORMALIZE EXCEL ROW
+
+   Supported auction order columns:
+
+   auctionOrder
+   Auction Order
+   AuctionOrder
+   Order
+   order
+
+   If none is supplied,
+   Excel row position is used.
 ========================================================= */
 
-function normalizeRow(row) {
+function normalizeRow(
+  row,
+  index
+) {
+  const rawAuctionOrder =
+    row.auctionOrder ??
+    row["Auction Order"] ??
+    row.AuctionOrder ??
+    row.Order ??
+    row.order ??
+    "";
+
+  const parsedAuctionOrder =
+    Number(
+      rawAuctionOrder
+    );
+
+  const rawAge =
+    row.Age ??
+    row.age ??
+    "";
+
+  const parsedAge =
+    rawAge === "" ||
+    rawAge === null ||
+    rawAge === undefined
+      ? null
+      : Number(
+          rawAge
+        );
+
   return {
+    auctionOrder:
+      Number.isFinite(
+        parsedAuctionOrder
+      ) &&
+      parsedAuctionOrder > 0
+        ? parsedAuctionOrder
+        : index + 1,
+
     name: String(
       row.Name ??
       row.name ??
       ""
     ).trim(),
 
-    age: Number(
-      row.Age ??
-      row.age
-    ),
+    age:
+      Number.isFinite(
+        parsedAge
+      )
+        ? parsedAge
+        : null,
 
     nationality: String(
       row.Nationality ??
@@ -210,16 +275,18 @@ function normalizeRow(row) {
       ""
     ).trim(),
 
-    rating: Number(
-      row.Rating ??
-      row.rating
-    ),
+    rating:
+      Number(
+        row.Rating ??
+        row.rating
+      ),
 
-    basePrice: Number(
-      row.BasePrice ??
-      row["Base Price"] ??
-      row.basePrice
-    ),
+    basePrice:
+      Number(
+        row.BasePrice ??
+        row["Base Price"] ??
+        row.basePrice
+      ),
 
     image: String(
       row.Image ??
@@ -230,6 +297,242 @@ function normalizeRow(row) {
 }
 
 /* =========================================================
+   NORMALIZE TEXT FOR IMAGE MATCHING
+========================================================= */
+
+function normalizeForImageMatch(
+  value
+) {
+  return String(
+    value || ""
+  )
+    .toLowerCase()
+    .normalize(
+      "NFKD"
+    )
+    .replace(
+      /[\u0300-\u036f]/g,
+      ""
+    )
+    .replace(
+      /&/g,
+      "and"
+    )
+    .replace(
+      /[^a-z0-9]+/g,
+      ""
+    )
+    .trim();
+}
+
+/* =========================================================
+   FIND IMAGE
+
+   IMPORTANT:
+
+   The 400 generic ZIP normally contains:
+
+   player_001.png
+   player_002.png
+   player_003.png
+   ...
+   player_400.png
+
+   Therefore:
+
+   Excel row 1 -> player_001.png
+   Excel row 2 -> player_002.png
+   Excel row 3 -> player_003.png
+
+   This is ONLY for images.
+
+   It has nothing to do with auctionOrder.
+========================================================= */
+
+function findImageForPlayer(
+  row,
+  imageMap,
+  excelIndex
+) {
+  /* =======================================================
+     1. EXACT IMAGE NAME FROM EXCEL
+  ======================================================= */
+
+  if (row.image) {
+    const exactFilename =
+      path
+        .basename(
+          row.image
+        )
+        .toLowerCase();
+
+    if (
+      imageMap.has(
+        exactFilename
+      )
+    ) {
+      return {
+        filename:
+          exactFilename,
+
+        buffer:
+          imageMap.get(
+            exactFilename
+          )
+      };
+    }
+  }
+
+  /* =======================================================
+     2. GENERIC 400-IMAGE ZIP
+
+     Excel row index determines image number.
+  ======================================================= */
+
+  if (
+    Number.isInteger(
+      excelIndex
+    )
+  ) {
+    const imageNumber =
+      String(
+        excelIndex + 1
+      ).padStart(
+        3,
+        "0"
+      );
+
+    const genericPng =
+      `player_${imageNumber}.png`;
+
+    if (
+      imageMap.has(
+        genericPng
+      )
+    ) {
+      return {
+        filename:
+          genericPng,
+
+        buffer:
+          imageMap.get(
+            genericPng
+          )
+      };
+    }
+
+    const genericJpg =
+      `player_${imageNumber}.jpg`;
+
+    if (
+      imageMap.has(
+        genericJpg
+      )
+    ) {
+      return {
+        filename:
+          genericJpg,
+
+        buffer:
+          imageMap.get(
+            genericJpg
+          )
+      };
+    }
+
+    const genericJpeg =
+      `player_${imageNumber}.jpeg`;
+
+    if (
+      imageMap.has(
+        genericJpeg
+      )
+    ) {
+      return {
+        filename:
+          genericJpeg,
+
+        buffer:
+          imageMap.get(
+            genericJpeg
+          )
+      };
+    }
+
+    const genericWebp =
+      `player_${imageNumber}.webp`;
+
+    if (
+      imageMap.has(
+        genericWebp
+      )
+    ) {
+      return {
+        filename:
+          genericWebp,
+
+        buffer:
+          imageMap.get(
+            genericWebp
+          )
+      };
+    }
+  }
+
+  /* =======================================================
+     3. NAME-BASED FALLBACK
+
+     Works with:
+
+     alisson.png
+     marquinhos.png
+     mbappe.png
+     etc.
+  ======================================================= */
+
+  const normalizedName =
+    normalizeForImageMatch(
+      row.name
+    );
+
+  if (
+    normalizedName
+  ) {
+    for (
+      const [
+        filename,
+        buffer
+      ] of imageMap.entries()
+    ) {
+      const extension =
+        path.extname(
+          filename
+        );
+
+      const stem =
+        normalizeForImageMatch(
+          path.basename(
+            filename,
+            extension
+          )
+        );
+
+      if (
+        stem ===
+        normalizedName
+      ) {
+        return {
+          filename,
+          buffer
+        };
+      }
+    }
+  }
+
+  return null;
+}
+
+/* =========================================================
    VALIDATE PLAYER
 ========================================================= */
 
@@ -237,34 +540,49 @@ function validatePlayerRow(
   row,
   index
 ) {
-  const errors = [];
+  const errors =
+    [];
 
-  if (!row.name) {
+  if (
+    !row.name
+  ) {
     errors.push(
       "Player name is required"
     );
   }
 
   if (
-    row.age === undefined ||
-    row.age === null ||
-    row.age === "" ||
-    !Number.isFinite(
-      Number(row.age)
+    row.age !== null &&
+    (
+      !Number.isFinite(
+        Number(
+          row.age
+        )
+      ) ||
+      Number(
+        row.age
+      ) < 0 ||
+      Number(
+        row.age
+      ) > 100
     )
   ) {
     errors.push(
-      "Valid age is required"
+      "Age must be between 0 and 100"
     );
   }
 
-  if (!row.nationality) {
+  if (
+    !row.nationality
+  ) {
     errors.push(
       "Nationality is required"
     );
   }
 
-  if (!row.position) {
+  if (
+    !row.position
+  ) {
     errors.push(
       "Position is required"
     );
@@ -278,7 +596,9 @@ function validatePlayerRow(
     );
   }
 
-  if (!row.category) {
+  if (
+    !row.category
+  ) {
     errors.push(
       "Category is required"
     );
@@ -293,19 +613,28 @@ function validatePlayerRow(
   }
 
   if (
-    row.rating === undefined ||
-    row.rating === null ||
-    row.rating === "" ||
+    row.rating ===
+      undefined ||
+    row.rating ===
+      null ||
+    row.rating ===
+      "" ||
     !Number.isFinite(
-      Number(row.rating)
+      Number(
+        row.rating
+      )
     )
   ) {
     errors.push(
       "Valid rating is required"
     );
   } else if (
-    Number(row.rating) < 1 ||
-    Number(row.rating) > 100
+    Number(
+      row.rating
+    ) < 1 ||
+    Number(
+      row.rating
+    ) > 100
   ) {
     errors.push(
       "Rating must be between 1 and 100"
@@ -313,38 +642,56 @@ function validatePlayerRow(
   }
 
   if (
-    row.basePrice === undefined ||
-    row.basePrice === null ||
-    row.basePrice === "" ||
+    row.basePrice ===
+      undefined ||
+    row.basePrice ===
+      null ||
+    row.basePrice ===
+      "" ||
     !Number.isFinite(
-      Number(row.basePrice)
+      Number(
+        row.basePrice
+      )
     )
   ) {
     errors.push(
       "Valid base price is required"
     );
   } else if (
-    Number(row.basePrice) < 0
+    Number(
+      row.basePrice
+    ) < 0
   ) {
     errors.push(
       "Base price cannot be negative"
     );
   }
 
-  if (!row.image) {
+  if (
+    !Number.isFinite(
+      Number(
+        row.auctionOrder
+      )
+    ) ||
+    Number(
+      row.auctionOrder
+    ) < 1
+  ) {
     errors.push(
-      "Image filename is required"
+      "Valid auction order is required"
     );
   }
 
   return {
-    rowNumber: index + 2,
+    rowNumber:
+      index + 2,
+
     errors
   };
 }
 
 /* =========================================================
-   PARSE EXCEL
+   PARSE EXCEL / CSV
 ========================================================= */
 
 function parseImportFile(
@@ -354,38 +701,47 @@ function parseImportFile(
     XLSX.read(
       buffer,
       {
-        type: "buffer"
+        type:
+          "buffer"
       }
     );
 
   const sheetName =
-    workbook.SheetNames[0];
+    workbook
+      .SheetNames[0];
 
-  if (!sheetName) {
+  if (
+    !sheetName
+  ) {
     throw new Error(
       "The uploaded file has no worksheet."
     );
   }
 
   return XLSX.utils.sheet_to_json(
-    workbook.Sheets[sheetName],
+    workbook.Sheets[
+      sheetName
+    ],
     {
-      defval: ""
+      defval:
+        ""
     }
   );
 }
 
 /* =========================================================
-   READ ZIP IMAGES
+   READ IMAGE ZIP
 ========================================================= */
 
 function readZipImages(
   zipBuffer
 ) {
   const zip =
-    new AdmZip(zipBuffer);
+    new AdmZip(
+      zipBuffer
+    );
 
-  const imageEntries =
+  const entries =
     zip
       .getEntries()
       .filter(
@@ -413,7 +769,8 @@ function readZipImages(
     new Map();
 
   for (
-    const entry of imageEntries
+    const entry of
+    entries
   ) {
     const filename =
       path
@@ -432,71 +789,93 @@ function readZipImages(
 }
 
 /* =========================================================
-   IMAGE ISSUES
+   GET IMAGE ISSUES
 ========================================================= */
 
 function getImageIssues(
   rows,
   imageMap
 ) {
-  const missingImages = [];
-  const duplicateImageReferences = [];
-  const referencedImages = new Set();
+  const missingImages =
+    [];
+
+  const duplicateImageReferences =
+    [];
+
+  const referencedImages =
+    new Set();
 
   rows.forEach(
     (
       row,
       index
     ) => {
-      const filename =
-        path
-          .basename(
-            row.image
-          )
-          .toLowerCase();
+      const image =
+        findImageForPlayer(
+          row,
+          imageMap,
+          index
+        );
 
-      if (!filename) {
-        return;
-      }
-
-      if (
-        !imageMap.has(
-          filename
-        )
-      ) {
+      if (!image) {
         missingImages.push({
           rowNumber:
             index + 2,
+
           player:
             row.name,
+
           image:
-            row.image
+            row.image ||
+            `player_${String(
+              index + 1
+            ).padStart(
+              3,
+              "0"
+            )}.png`
         });
       }
 
+      const requestedImage =
+        row.image
+          ? path
+              .basename(
+                row.image
+              )
+              .toLowerCase()
+          : `player_${String(
+              index + 1
+            ).padStart(
+              3,
+              "0"
+            )}.png`;
+
       if (
         referencedImages.has(
-          filename
+          requestedImage
         )
       ) {
         duplicateImageReferences.push({
           rowNumber:
             index + 2,
+
           player:
             row.name,
+
           image:
-            row.image
+            requestedImage
         });
       }
 
       referencedImages.add(
-        filename
+        requestedImage
       );
     }
   );
 
   return {
     missingImages,
+
     duplicateImageReferences
   };
 }
@@ -509,15 +888,25 @@ router.post(
   "/import/preview",
   importUpload.fields([
     {
-      name: "playerFile",
-      maxCount: 1
+      name:
+        "playerFile",
+
+      maxCount:
+        1
     },
+
     {
-      name: "imageZip",
-      maxCount: 1
+      name:
+        "imageZip",
+
+      maxCount:
+        1
     }
   ]),
-  async (req, res) => {
+  async (
+    req,
+    res
+  ) => {
     try {
       const playerFile =
         req.files
@@ -528,17 +917,25 @@ router.post(
           ?.imageZip?.[0];
 
       if (!playerFile) {
-        return res.status(400).json({
-          message:
-            "Please upload the Excel or CSV player file."
-        });
+        return res
+          .status(
+            400
+          )
+          .json({
+            message:
+              "Please upload the Excel or CSV player file."
+          });
       }
 
       if (!imageZip) {
-        return res.status(400).json({
-          message:
-            "Please upload the ZIP containing player images."
-        });
+        return res
+          .status(
+            400
+          )
+          .json({
+            message:
+              "Please upload the ZIP containing player images."
+          });
       }
 
       const rawRows =
@@ -547,17 +944,29 @@ router.post(
         );
 
       if (
-        rawRows.length === 0
+        rawRows.length ===
+        0
       ) {
-        return res.status(400).json({
-          message:
-            "The player file contains no data."
-        });
+        return res
+          .status(
+            400
+          )
+          .json({
+            message:
+              "The player file contains no data."
+          });
       }
 
       const rows =
         rawRows.map(
-          normalizeRow
+          (
+            row,
+            index
+          ) =>
+            normalizeRow(
+              row,
+              index
+            )
         );
 
       const validationResults =
@@ -574,7 +983,9 @@ router.post(
 
       const invalidRows =
         validationResults.filter(
-          (result) =>
+          (
+            result
+          ) =>
             result.errors.length >
             0
         );
@@ -582,7 +993,7 @@ router.post(
       const validRows =
         rows.filter(
           (
-            _,
+            row,
             index
           ) =>
             validationResults[
@@ -602,8 +1013,11 @@ router.post(
           imageMap
         );
 
-      const duplicateNames = [];
-      const seenNames = new Set();
+      const duplicateNames =
+        [];
+
+      const seenNames =
+        new Set();
 
       rows.forEach(
         (
@@ -622,12 +1036,15 @@ router.post(
             duplicateNames.push({
               rowNumber:
                 index + 2,
+
               name:
                 row.name
             });
           }
 
-          if (lowerName) {
+          if (
+            lowerName
+          ) {
             seenNames.add(
               lowerName
             );
@@ -638,10 +1055,14 @@ router.post(
       const playerNames =
         rows
           .map(
-            (row) =>
+            (
+              row
+            ) =>
               row.name
           )
-          .filter(Boolean);
+          .filter(
+            Boolean
+          );
 
       const existingPlayers =
         await Player.find(
@@ -652,14 +1073,17 @@ router.post(
             }
           },
           {
-            name: 1
+            name:
+              1
           }
         );
 
       const existingNames =
         new Set(
           existingPlayers.map(
-            (player) =>
+            (
+              player
+            ) =>
               player.name.toLowerCase()
           )
         );
@@ -673,12 +1097,15 @@ router.post(
             ) => ({
               rowNumber:
                 index + 2,
+
               name:
                 row.name
             })
           )
           .filter(
-            (item) =>
+            (
+              item
+            ) =>
               existingNames.has(
                 item.name.toLowerCase()
               )
@@ -718,15 +1145,19 @@ router.post(
 
         preview:
           validRows.map(
-            (row) => ({
+            (
+              row,
+              index
+            ) => ({
               ...row,
+
               imageFound:
-                imageMap.has(
-                  path
-                    .basename(
-                      row.image
-                    )
-                    .toLowerCase()
+                !!findImageForPlayer(
+                  row,
+                  imageMap,
+                  rows.indexOf(
+                    row
+                  )
                 )
             })
           ),
@@ -754,11 +1185,15 @@ router.post(
         error
       );
 
-      res.status(500).json({
-        message:
-          error.message ||
-          "Failed to preview player import."
-      });
+      res
+        .status(
+          500
+        )
+        .json({
+          message:
+            error.message ||
+            "Failed to preview player import."
+        });
     }
   }
 );
@@ -771,15 +1206,25 @@ router.post(
   "/import",
   importUpload.fields([
     {
-      name: "playerFile",
-      maxCount: 1
+      name:
+        "playerFile",
+
+      maxCount:
+        1
     },
+
     {
-      name: "imageZip",
-      maxCount: 1
+      name:
+        "imageZip",
+
+      maxCount:
+        1
     }
   ]),
-  async (req, res) => {
+  async (
+    req,
+    res
+  ) => {
     try {
       const playerFile =
         req.files
@@ -790,17 +1235,25 @@ router.post(
           ?.imageZip?.[0];
 
       if (!playerFile) {
-        return res.status(400).json({
-          message:
-            "Please upload the Excel or CSV player file."
-        });
+        return res
+          .status(
+            400
+          )
+          .json({
+            message:
+              "Please upload the Excel or CSV player file."
+          });
       }
 
       if (!imageZip) {
-        return res.status(400).json({
-          message:
-            "Please upload the ZIP containing player images."
-        });
+        return res
+          .status(
+            400
+          )
+          .json({
+            message:
+              "Please upload the ZIP containing player images."
+          });
       }
 
       const rawRows =
@@ -808,13 +1261,41 @@ router.post(
           playerFile.buffer
         );
 
+      if (
+        rawRows.length ===
+        0
+      ) {
+        return res
+          .status(
+            400
+          )
+          .json({
+            message:
+              "The player file contains no data."
+          });
+      }
+
+      /*
+        Preserve the original Excel row index.
+      */
+
       const rows =
         rawRows.map(
-          normalizeRow
+          (
+            row,
+            index
+          ) =>
+            normalizeRow(
+              row,
+              index
+            )
         );
 
-      const validationErrors = [];
-      const validRows = [];
+      const validationErrors =
+        [];
+
+      const validRows =
+        [];
 
       rows.forEach(
         (
@@ -828,7 +1309,8 @@ router.post(
             );
 
           if (
-            validation.errors.length >
+            validation.errors
+              .length >
             0
           ) {
             validationErrors.push(
@@ -842,6 +1324,23 @@ router.post(
         }
       );
 
+      if (
+        validationErrors.length >
+        0
+      ) {
+        return res
+          .status(
+            400
+          )
+          .json({
+            message:
+              "Some player rows contain validation errors.",
+
+            errors:
+              validationErrors
+          });
+      }
+
       const imageMap =
         readZipImages(
           imageZip.buffer
@@ -854,36 +1353,38 @@ router.post(
         );
 
       if (
-        validationErrors.length >
-        0
-      ) {
-        return res.status(400).json({
-          message:
-            "Some player rows contain validation errors.",
-          errors:
-            validationErrors
-        });
-      }
-
-      if (
         imageIssues
           .missingImages
           .length >
         0
       ) {
-        return res.status(400).json({
-          message:
-            "Some player images are missing from the ZIP.",
-          missingImages:
-            imageIssues.missingImages
-        });
+        return res
+          .status(
+            400
+          )
+          .json({
+            message:
+              "Some player images are missing from the ZIP.",
+
+            missingImages:
+              imageIssues
+                .missingImages
+          });
       }
 
-      const uniqueRows = [];
-      const seenNames = new Set();
+      /* =====================================================
+         REMOVE DUPLICATE NAMES
+      ===================================================== */
+
+      const uniqueRows =
+        [];
+
+      const seenNames =
+        new Set();
 
       for (
-        const row of validRows
+        const row of
+        validRows
       ) {
         const lowerName =
           row.name.toLowerCase();
@@ -911,20 +1412,25 @@ router.post(
             name: {
               $in:
                 uniqueRows.map(
-                  (row) =>
+                  (
+                    row
+                  ) =>
                     row.name
                 )
             }
           },
           {
-            name: 1
+            name:
+              1
           }
         );
 
       const existingNames =
         new Set(
           existingPlayers.map(
-            (player) =>
+            (
+              player
+            ) =>
               player.name.toLowerCase()
           )
         );
@@ -950,10 +1456,25 @@ router.post(
         );
       }
 
-      const playersToInsert = [];
+      const playersToInsert =
+        [];
+
+      /*
+        IMPORTANT:
+
+        The index here is the original
+        Excel row index.
+
+        It determines the generic image:
+
+        row 0 -> player_001
+        row 1 -> player_002
+        ...
+      */
 
       for (
-        const row of uniqueRows
+        const row of
+        uniqueRows
       ) {
         if (
           existingNames.has(
@@ -963,26 +1484,29 @@ router.post(
           continue;
         }
 
-        const imageFilename =
-          path
-            .basename(
-              row.image
-            )
-            .toLowerCase();
-
-        const imageBuffer =
-          imageMap.get(
-            imageFilename
+        /*
+          Find original row index.
+        */
+        const excelIndex =
+          rows.indexOf(
+            row
           );
 
-        if (!imageBuffer) {
+        const image =
+          findImageForPlayer(
+            row,
+            imageMap,
+            excelIndex
+          );
+
+        if (!image) {
           continue;
         }
 
         const extension =
           path
             .extname(
-              imageFilename
+              image.filename
             )
             .toLowerCase();
 
@@ -1000,8 +1524,18 @@ router.post(
             uploadDirectory,
             uniqueFilename
           ),
-          imageBuffer
+          image.buffer
         );
+
+        /*
+          ===================================================
+          IMPORTANT
+
+          auctionOrder comes from Excel.
+
+          It is completely independent from image order.
+          ===================================================
+        */
 
         playersToInsert.push({
           name:
@@ -1035,7 +1569,9 @@ router.post(
             true,
 
           auctionOrder:
-            null,
+            Number(
+              row.auctionOrder
+            ),
 
           soldTo:
             null,
@@ -1049,19 +1585,25 @@ router.post(
         playersToInsert.length ===
         0
       ) {
-        return res.status(400).json({
-          message:
-            "No new players are available to import."
-        });
+        return res
+          .status(
+            400
+          )
+          .json({
+            message:
+              "No new players are available to import."
+          });
       }
 
       await Player.insertMany(
         playersToInsert
       );
 
-      res.status(201).json({
+      res.status(
+        201
+      ).json({
         message:
-          "Players and images imported successfully.",
+          "Players and images imported successfully in the specified auction order.",
 
         imported:
           playersToInsert.length,
@@ -1076,49 +1618,93 @@ router.post(
         error
       );
 
-      res.status(500).json({
-        message:
-          error.message ||
-          "Failed to import players and images."
-      });
+      res
+        .status(
+          500
+        )
+        .json({
+          message:
+            error.message ||
+            "Failed to import players and images."
+        });
     }
   }
 );
 
 /* =========================================================
-   PREPARE EXISTING PLAYERS
+   PREPARE AUCTION
+
+   IMPORTANT:
+   Never clear auctionOrder here.
 ========================================================= */
 
 router.post(
   "/prepare-auction",
-  async (req, res) => {
+  async (
+    req,
+    res
+  ) => {
     try {
-      const result =
-        await Player.updateMany(
-          {
-            status:
-              "Available",
+      const players =
+        await Player.find({
+          status:
+            "Available",
 
-            soldTo:
-              null
-          },
-          {
-            $set: {
-              activeForAuction:
-                true,
+          soldTo:
+            null
+        }).sort({
+          auctionOrder:
+            1,
 
-              auctionOrder:
-                null
+          createdAt:
+            1
+        });
+
+      if (
+        players.length ===
+        0
+      ) {
+        return res
+          .status(
+            400
+          )
+          .json({
+            message:
+              "No available players found."
+          });
+      }
+
+      const updates =
+        players.map(
+          (
+            player
+          ) => ({
+            updateOne: {
+              filter: {
+                _id:
+                  player._id
+              },
+
+              update: {
+                $set: {
+                  activeForAuction:
+                    true
+                }
+              }
             }
-          }
+          })
         );
+
+      await Player.bulkWrite(
+        updates
+      );
 
       res.json({
         message:
-          "Available players prepared for auction.",
+          "Available players prepared. Existing auction order has been preserved.",
 
         activated:
-          result.modifiedCount
+          players.length
       });
     } catch (error) {
       console.error(
@@ -1126,10 +1712,14 @@ router.post(
         error
       );
 
-      res.status(500).json({
-        message:
-          "Failed to prepare players for auction."
-      });
+      res
+        .status(
+          500
+        )
+        .json({
+          message:
+            "Failed to prepare players for auction."
+        });
     }
   }
 );
@@ -1140,8 +1730,13 @@ router.post(
 
 router.post(
   "/add",
-  imageUpload.single("image"),
-  async (req, res) => {
+  imageUpload.single(
+    "image"
+  ),
+  async (
+    req,
+    res
+  ) => {
     try {
       const {
         name,
@@ -1150,7 +1745,8 @@ router.post(
         position,
         category,
         rating,
-        basePrice
+        basePrice,
+        auctionOrder
       } = req.body;
 
       if (
@@ -1159,13 +1755,19 @@ router.post(
         !nationality ||
         !position ||
         !category ||
-        rating === undefined ||
-        basePrice === undefined
+        rating ===
+          undefined ||
+        basePrice ===
+          undefined
       ) {
-        return res.status(400).json({
-          message:
-            "Please fill in all required player details."
-        });
+        return res
+          .status(
+            400
+          )
+          .json({
+            message:
+              "Please fill in all required player details."
+          });
       }
 
       const existingPlayer =
@@ -1174,11 +1776,49 @@ router.post(
             name.trim()
         });
 
-      if (existingPlayer) {
-        return res.status(409).json({
-          message:
-            "A player with this name already exists."
+      if (
+        existingPlayer
+      ) {
+        return res
+          .status(
+            409
+          )
+          .json({
+            message:
+              "A player with this name already exists."
+          });
+      }
+
+      const lastPlayer =
+        await Player.findOne(
+          {}
+        ).sort({
+          auctionOrder:
+            -1
         });
+
+      let nextOrder =
+        Number(
+          auctionOrder
+        );
+
+      if (
+        !Number.isFinite(
+          nextOrder
+        ) ||
+        nextOrder < 1
+      ) {
+        nextOrder =
+          lastPlayer &&
+          Number.isFinite(
+            Number(
+              lastPlayer.auctionOrder
+            )
+          )
+            ? Number(
+                lastPlayer.auctionOrder
+              ) + 1
+            : 1;
       }
 
       const player =
@@ -1197,10 +1837,14 @@ router.post(
           category,
 
           rating:
-            Number(rating),
+            Number(
+              rating
+            ),
 
           basePrice:
-            Number(basePrice),
+            Number(
+              basePrice
+            ),
 
           image:
             req.file
@@ -1214,7 +1858,7 @@ router.post(
             true,
 
           auctionOrder:
-            null,
+            nextOrder,
 
           soldTo:
             null,
@@ -1225,9 +1869,11 @@ router.post(
 
       await player.save();
 
-      res.status(201).json({
+      res.status(
+        201
+      ).json({
         message:
-          "Player created successfully",
+          "Player created successfully.",
 
         player
       });
@@ -1237,11 +1883,15 @@ router.post(
         error
       );
 
-      res.status(500).json({
-        message:
-          error.message ||
-          "Failed to create player."
-      });
+      res
+        .status(
+          500
+        )
+        .json({
+          message:
+            error.message ||
+            "Failed to create player."
+        });
     }
   }
 );
@@ -1252,7 +1902,10 @@ router.post(
 
 router.delete(
   "/:id",
-  async (req, res) => {
+  async (
+    req,
+    res
+  ) => {
     try {
       const player =
         await Player.findById(
@@ -1260,20 +1913,28 @@ router.delete(
         );
 
       if (!player) {
-        return res.status(404).json({
-          message:
-            "Player not found."
-        });
+        return res
+          .status(
+            404
+          )
+          .json({
+            message:
+              "Player not found."
+          });
       }
 
       if (
         player.status ===
         "Sold"
       ) {
-        return res.status(400).json({
-          message:
-            "Sold players cannot be deleted."
-        });
+        return res
+          .status(
+            400
+          )
+          .json({
+            message:
+              "Sold players cannot be deleted."
+          });
       }
 
       await Player.findByIdAndDelete(
@@ -1290,10 +1951,14 @@ router.delete(
         error
       );
 
-      res.status(500).json({
-        message:
-          "Failed to delete player."
-      });
+      res
+        .status(
+          500
+        )
+        .json({
+          message:
+            "Failed to delete player."
+        });
     }
   }
 );
@@ -1304,7 +1969,10 @@ router.delete(
 
 router.post(
   "/delete-selected",
-  async (req, res) => {
+  async (
+    req,
+    res
+  ) => {
     try {
       const {
         playerIds
@@ -1314,12 +1982,17 @@ router.post(
         !Array.isArray(
           playerIds
         ) ||
-        playerIds.length === 0
+        playerIds.length ===
+          0
       ) {
-        return res.status(400).json({
-          message:
-            "No players selected."
-        });
+        return res
+          .status(
+            400
+          )
+          .json({
+            message:
+              "No players selected."
+          });
       }
 
       const selectedPlayers =
@@ -1332,18 +2005,25 @@ router.post(
 
       const soldPlayers =
         selectedPlayers.filter(
-          (player) =>
+          (
+            player
+          ) =>
             player.status ===
             "Sold"
         );
 
       if (
-        soldPlayers.length > 0
+        soldPlayers.length >
+        0
       ) {
-        return res.status(400).json({
-          message:
-            "Sold players cannot be deleted individually. Use Reset Auction or Delete All for a complete reset."
-        });
+        return res
+          .status(
+            400
+          )
+          .json({
+            message:
+              "Sold players cannot be deleted individually. Use Reset Auction or Delete All for a complete reset."
+          });
       }
 
       const result =
@@ -1367,10 +2047,14 @@ router.post(
         error
       );
 
-      res.status(500).json({
-        message:
-          "Failed to delete selected players."
-      });
+      res
+        .status(
+          500
+        )
+        .json({
+          message:
+            "Failed to delete selected players."
+        });
     }
   }
 );
@@ -1381,24 +2065,34 @@ router.post(
 
 router.delete(
   "/all/clear",
-  async (req, res) => {
+  async (
+    req,
+    res
+  ) => {
     try {
       await Team.updateMany(
         {},
         {
           $set: {
-            players: []
+            players:
+              []
           }
         }
       );
 
-      await Auction.deleteMany({});
+      await Auction.deleteMany(
+        {}
+      );
 
       const result =
-        await Player.deleteMany({});
+        await Player.deleteMany(
+          {}
+        );
 
       const io =
-        req.app.get("io");
+        req.app.get(
+          "io"
+        );
 
       if (io) {
         const teams =
@@ -1407,19 +2101,21 @@ router.delete(
               true
           })
             .select(
-              "username purse club players isActive"
+              "username purse club players isActive bestXI"
             )
             .populate({
               path:
                 "club",
+
               select:
                 "name country logo"
             })
             .populate({
               path:
                 "players",
+
               select:
-                "name age nationality position category rating basePrice image status soldPrice"
+                "name age nationality position category rating basePrice image status soldPrice auctionOrder"
             });
 
         io.to(
@@ -1457,27 +2153,39 @@ router.delete(
         error
       );
 
-      res.status(500).json({
-        message:
-          "Failed to delete all players."
-      });
+      res
+        .status(
+          500
+        )
+        .json({
+          message:
+            "Failed to delete all players."
+        });
     }
   }
 );
 
 /* =========================================================
    GET ALL PLAYERS
+
+   Sorted by auctionOrder.
 ========================================================= */
 
 router.get(
   "/",
-  async (req, res) => {
+  async (
+    req,
+    res
+  ) => {
     try {
       const players =
         await Player.find()
           .sort({
+            auctionOrder:
+              1,
+
             createdAt:
-              -1
+              1
           });
 
       res.json(
@@ -1489,10 +2197,14 @@ router.get(
         error
       );
 
-      res.status(500).json({
-        message:
-          "Failed to fetch players."
-      });
+      res
+        .status(
+          500
+        )
+        .json({
+          message:
+            "Failed to fetch players."
+        });
     }
   }
 );
@@ -1503,7 +2215,10 @@ router.get(
 
 router.get(
   "/:id",
-  async (req, res) => {
+  async (
+    req,
+    res
+  ) => {
     try {
       const player =
         await Player.findById(
@@ -1511,10 +2226,14 @@ router.get(
         );
 
       if (!player) {
-        return res.status(404).json({
-          message:
-            "Player not found."
-        });
+        return res
+          .status(
+            404
+          )
+          .json({
+            message:
+              "Player not found."
+          });
       }
 
       res.json(
@@ -1526,13 +2245,21 @@ router.get(
         error
       );
 
-      res.status(500).json({
-        message:
-          "Failed to fetch player."
-      });
+      res
+        .status(
+          500
+        )
+        .json({
+          message:
+            "Failed to fetch player."
+        });
     }
   }
 );
+
+/* =========================================================
+   EXPORT
+========================================================= */
 
 module.exports =
   router;
