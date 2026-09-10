@@ -23,12 +23,28 @@ const MONGO_URI =
    CORS
 ========================================================= */
 
+const allowedOrigins = (
+  process.env.CLIENT_URL ||
+  "http://localhost:5173"
+)
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
 app.use((req, res, next) => {
 
-  res.header(
-  "Access-Control-Allow-Origin",
-  process.env.CLIENT_URL || "http://localhost:5173"
-);
+  const requestOrigin =
+    req.headers.origin;
+
+  if (
+    !requestOrigin ||
+    allowedOrigins.includes(requestOrigin)
+  ) {
+    res.header(
+      "Access-Control-Allow-Origin",
+      requestOrigin || allowedOrigins[0]
+    );
+  }
 
   res.header(
     "Access-Control-Allow-Methods",
