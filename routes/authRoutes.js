@@ -18,6 +18,12 @@ router.post(
         password
       } = req.body;
 
+      const configuredUsername =
+        process.env.ADMIN_USERNAME?.trim();
+
+      const configuredPassword =
+        process.env.ADMIN_PASSWORD;
+
       if (
         !username ||
         !password
@@ -29,10 +35,24 @@ router.post(
       }
 
       if (
-        username !==
-          process.env.ADMIN_USERNAME ||
+        !configuredUsername ||
+        !configuredPassword
+      ) {
+        console.error(
+          "Admin login is not configured: ADMIN_USERNAME and ADMIN_PASSWORD are required."
+        );
+
+        return res.status(503).json({
+          message:
+            "Admin login is not configured on the server"
+        });
+      }
+
+      if (
+        username.trim() !==
+          configuredUsername ||
         password !==
-          process.env.ADMIN_PASSWORD
+          configuredPassword
       ) {
         return res.status(401).json({
           message:
