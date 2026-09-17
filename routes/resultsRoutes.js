@@ -180,8 +180,15 @@ function checkSquadRules(players) {
 }
 
 function getFormationFromBestXI(bestXI) {
+  if (typeof bestXI?.formation === "string") {
+    return bestXI.formation;
+  }
+  if (bestXI?.formation && typeof bestXI.formation === "object") {
+    const f = bestXI.formation;
+    // Derive string key from counts: e.g. "4-4-2"
+    return `${f.defender}-${f.midfield}-${f.attack}`;
+  }
   return (
-    bestXI?.formation ||
     bestXI?.selectedFormation ||
     bestXI?.formationName ||
     ""
