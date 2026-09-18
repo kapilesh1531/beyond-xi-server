@@ -58,6 +58,13 @@ const FORMATIONS = {
     Forward: 1
   },
 
+  "4-5-1": {
+    Goalkeeper: 1,
+    Defender: 4,
+    Midfielder: 5,
+    Forward: 1
+  },
+
   "3-4-3": {
     Goalkeeper: 1,
     Defender: 3,
