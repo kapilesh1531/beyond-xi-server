@@ -7,6 +7,7 @@ const Team = mongoose.models.Team;
 const Club = mongoose.models.Club;
 
 const Player = mongoose.models.Player;
+const Auction = mongoose.models.Auction || require("../models/Auction");
 
 const TradeSettings = require("../models/TradeSettings");
 
