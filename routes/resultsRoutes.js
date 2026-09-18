@@ -29,7 +29,7 @@ const MIN_POSITION_REQUIREMENTS = {
   Goalkeeper: 1,
   Defender: 3,
   Midfielder: 3,
-  Forward: 2
+  Forward: 1
 };
 
 // =========================================================
