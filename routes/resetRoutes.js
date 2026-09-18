@@ -1,222 +1,154 @@
-const express =
-  require("express");
+const express = require("express");
 
-const mongoose =
-  require("mongoose");
+const mongoose = require("mongoose");
 
-const Auction =
-  mongoose.models.Auction;
+const Auction = mongoose.models.Auction;
 
-const Team =
-  mongoose.models.Team;
+const Team = mongoose.models.Team;
 
-const Player =
-  mongoose.models.Player;
+const Player = mongoose.models.Player;
 
-const Club =
-  mongoose.models.Club;
+const Club = mongoose.models.Club;
 
-const router =
-  express.Router();
+const router = express.Router();
 
-router.post(
-  "/auction",
-  async (req, res) => {
-    try {
-      await Player.updateMany(
-        {},
-        {
-          $set: {
-            status:
-              "Pool",
+const TradeSettings = require("../models/TradeSettings");
 
-            activeForAuction:
-              false,
+router.post("/auction", async (req, res) => {
+	try {
+		await TradeSettings.updateMany(
+			{},
+			{
+				$set: {
+					status: "Closed",
+					openedAt: null,
+					endsAt: null,
+					closedAt: null,
+				},
+			},
+			{ upsert: true },
+		);
 
-            auctionOrder:
-              null,
+		await Player.updateMany(
+			{},
+			{
+				$set: {
+					status: "Pool",
 
-            soldTo:
-              null,
+					activeForAuction: false,
 
-            soldPrice:
-              null
-          }
-        }
-      );
+					auctionOrder: null,
 
-      await Team.updateMany(
-        {},
-        {
-          $set: {
-            purse:
-              200000000,
+					soldTo: null,
 
-            players: [],
+					soldPrice: null,
+				},
+			},
+		);
 
-            bestXI: {
-              submitted:
-                false,
+		await Team.updateMany(
+			{},
+			{
+				$set: {
+					purse: 200000000,
 
-              formation: {
-                goalkeeper:
-                  1,
+					players: [],
 
-                defender:
-                  4,
+					bestXI: {
+						submitted: false,
 
-                midfield:
-                  3,
+						formation: {
+							goalkeeper: 1,
 
-                attack:
-                  3
-              },
+							defender: 4,
 
-              players: [],
+							midfield: 3,
 
-              submittedAt:
-                null
-            }
-          }
-        }
-      );
+							attack: 3,
+						},
 
-      await Auction.deleteMany(
-        {}
-      );
+						players: [],
 
-      const teams =
-        await Team.find({})
-          .select(
-            "club"
-          );
+						submittedAt: null,
+					},
+				},
+			},
+		);
 
-      const assignedClubIds =
-        teams
-          .map(
-            (team) =>
-              team.club
-          )
-          .filter(
-            Boolean
-          );
+		await Auction.deleteMany({});
 
-      await Club.updateMany(
-        {},
-        {
-          $set: {
-            isAvailable:
-              true,
+		const teams = await Team.find({}).select("club");
 
-            assignedTo:
-              null
-          }
-        }
-      );
+		const assignedClubIds = teams.map((team) => team.club).filter(Boolean);
 
-      if (
-        assignedClubIds.length >
-        0
-      ) {
-        await Club.updateMany(
-          {
-            _id: {
-              $in:
-                assignedClubIds
-            }
-          },
-          {
-            $set: {
-              isAvailable:
-                false,
+		await Club.updateMany(
+			{},
+			{
+				$set: {
+					isAvailable: true,
 
-              assignedTo:
-                null
-            }
-          }
-        );
-      }
+					assignedTo: null,
+				},
+			},
+		);
 
-      const io =
-        req.app.get(
-          "io"
-        );
+		if (assignedClubIds.length > 0) {
+			await Club.updateMany(
+				{
+					_id: {
+						$in: assignedClubIds,
+					},
+				},
+				{
+					$set: {
+						isAvailable: false,
 
-      if (io) {
-        const updatedTeams =
-          await Team.find({
-            isActive:
-              true
-          })
-            .select(
-              "club username purse players bestXI isActive"
-            )
-            .populate(
-              "club",
-              "name country logo"
-            )
-            .populate({
-              path:
-                "players",
+						assignedTo: null,
+					},
+				},
+			);
+		}
 
-              select:
-                "name age nationality position category rating basePrice image status soldPrice"
-            })
-            .populate({
-              path:
-                "bestXI.players",
+		const io = req.app.get("io");
 
-              select:
-                "name age nationality position category rating image soldPrice"
-            });
+		if (io) {
+			const updatedTeams = await Team.find({
+				isActive: true,
+			})
+				.select("club username purse players bestXI isActive")
+				.populate("club", "name country logo")
+				.populate({
+					path: "players",
 
-        const updatedPlayers =
-          await Player.find()
-            .sort({
-              auctionOrder:
-                1
-            });
+					select: "name age nationality position category rating basePrice image status soldPrice",
+				})
+				.populate({
+					path: "bestXI.players",
 
-        io.to(
-          "auction-room"
-        ).emit(
-          "teams:update",
-          updatedTeams
-        );
+					select: "name age nationality position category rating image soldPrice",
+				});
 
-        io.to(
-          "auction-room"
-        ).emit(
-          "players:update",
-          updatedPlayers
-        );
+			const updatedPlayers = await Player.find().sort({
+				auctionOrder: 1,
+			});
 
-        io.to(
-          "auction-room"
-        ).emit(
-          "auction:update",
-          null
-        );
-      }
+			io.to("auction-room").emit("teams:update", updatedTeams);
 
-      res.json({
-        message:
-          "Auction reset successfully."
-      });
-    } catch (error) {
-      console.error(
-        "Reset auction error:",
-        error
-      );
+			io.to("auction-room").emit("players:update", updatedPlayers);
 
-      res.status(500).json({
-        message:
-          error.message ||
-          "Failed to reset auction."
-      });
-    }
-  }
-);
+			io.to("auction-room").emit("auction:update", null);
+		}
 
-module.exports =
-  router;
+		res.json({
+			message: "Auction reset successfully.",
+		});
+	} catch (error) {
+		console.error("Reset auction error:", error);
+
+		res.status(500).json({
+			message: error.message || "Failed to reset auction.",
+		});
+	}
+});
+
+module.exports = router;
